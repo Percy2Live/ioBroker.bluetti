@@ -1,0 +1,5 @@
+{
+	"bluetti adapter settings": "Adaptereinstellungen für BLUETTI",
+	"pollInterval": "Abfrageintervall (Sekunden)",
+	"pollIntervalHelp": "Mindestabstand zwischen BLUETTI-Telemetrieabfragen. Die erste Implementierung bleibt read-only."
+}

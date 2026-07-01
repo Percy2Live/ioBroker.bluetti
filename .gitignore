@@ -1,11 +1,28 @@
+# Dot-directories: keep generated project metadata, ignore the rest
+.*/
+!.vscode/
+!.github/
+
+# Dependencies and build output
 node_modules/
-coverage/
 build/
 dist/
+coverage/
 *.tgz
+iobroker.*.tgz
+
+# Local environment / editor noise
 .env
 .env.*
 .DS_Store
 .idea/
-.vscode/
+*.code-workspace
 *.log
+npm-debug.log
+
+# ioBroker/create-adapter noise
+nbproject
+Thumbs.db
+.commitinfo
+admin/i18n/flat.txt
+admin/i18n/*/flat.txt
