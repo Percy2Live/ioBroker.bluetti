@@ -69,6 +69,20 @@ The adapter was scaffolded with `@iobroker/create-adapter` as a TypeScript class
 | `npm run lint` | Run ESLint |
 | `npm test` | Run TypeScript and package tests |
 | `npm run test:integration` | Run ioBroker startup integration test |
+| `npm run test:repo` | Run ioBroker repository checker in local mode |
+
+## Repository checker status
+
+`npm run test:repo` runs `@iobroker/repochecker` in local mode via `npm exec`, because the checker must not be listed as an adapter dependency. The current bootstrap repository still has expected upstream/release findings until the adapter is published, tagged, and submitted to the ioBroker repositories:
+
+- package `iobroker.bluetti` is not published on npm yet
+- release `0.0.1` is not tagged yet
+- adapter `bluetti` is not present in the latest ioBroker repository yet
+- GitHub API access can fail with HTTP 403 in unauthenticated/local checker runs; set `OWN_GITHUB_TOKEN` for authenticated checker runs
+- GitHub Actions log retrieval can warn in unauthenticated/local checker runs
+- TypeScript version freshness can be reported by the checker and should be evaluated during dependency maintenance
+
+All file-level checker findings that can be fixed before the first release should be fixed in the repository instead of ignored.
 
 ## Development plan
 
@@ -81,6 +95,16 @@ The first repo tasks are:
 5. add ioBroker package, integration, lint, build, and repository checker gates
 6. implement read-only auth/polling against verified sanitized payloads
 
+## Changelog
+
+### 0.0.1
+
+- Initial TypeScript adapter scaffold for BLUETTI telemetry.
+
+Older entries are kept in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
+
 ## License
 
-MIT
+MIT License
+
+Copyright (c) 2026 Percy2Live

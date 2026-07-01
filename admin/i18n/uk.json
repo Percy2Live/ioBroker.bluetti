@@ -1,5 +1,5 @@
 {
-	"bluetti adapter settings": "Adapter settings for BLUETTI",
-	"pollInterval": "Poll interval (seconds)",
-	"pollIntervalHelp": "Minimum time between BLUETTI telemetry polls. The first implementation remains read-only."
+	"bluetti adapter settings": "Налаштування адаптера для BLUETTI",
+	"pollInterval": "Інтервал опитування (секунди)",
+	"pollIntervalHelp": "Мінімальний час між опитуваннями телеметрії BLUETTI. Перша реалізація залишається лише для читання."
 }
