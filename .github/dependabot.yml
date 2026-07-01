@@ -4,21 +4,27 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
-      day: 18
       time: "00:05"
       timezone: Europe/Berlin
-    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 15
     assignees:
       - Percy2Live
     versioning-strategy: increase
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: monthly
-      day: 18
       time: "00:05"
       timezone: Europe/Berlin
-    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 15
     assignees:
       - Percy2Live
