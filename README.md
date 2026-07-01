@@ -1,12 +1,21 @@
-# ioBroker BLUETTI
+![Logo](admin/bluetti.png)
+
+# ioBroker.bluetti
+
+[![NPM version](https://img.shields.io/npm/v/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
+[![Downloads](https://img.shields.io/npm/dm/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
+![Number of Installations](https://iobroker.live/badges/bluetti-installed.svg)
+![Current version in stable repository](https://iobroker.live/badges/bluetti-stable.svg)
+
+**Tests:** ![Test and Release](https://github.com/Percy2Live/ioBroker.bluetti/workflows/Test%20and%20Release/badge.svg)
 
 Read-only ioBroker adapter project for BLUETTI power-station telemetry, starting with **BLUETTI Elite 30 V2** (`EL30V2` / `PR30V2`).
 
 ## Status
 
-Early research / planning repository.
+Early scaffold / implementation repository.
 
-No adapter package is published yet. The first implementation step is an API spike against the official BLUETTI Home Assistant integration before scaffolding the ioBroker adapter.
+The TypeScript ioBroker adapter scaffold exists. No adapter package is published yet, and real Elite 30 V2 payload values still need validation with sanitized account/device responses before user-facing telemetry states are implemented.
 
 ## Goals
 
@@ -49,15 +58,28 @@ The first implementation is expected to use the BLUETTI cloud API if the officia
 
 A cloud-only adapter **cannot prove a grid outage by itself**. It can only expose evidence such as stale telemetry, cloud reachability, device reachability, and repeated polling failures. Reliable power-outage automations should combine these states with at least one local signal, for example a router/ping check, smart meter, Shelly/energy meter, or a separate UPS signal.
 
+## Development
+
+The adapter was scaffolded with `@iobroker/create-adapter` as a TypeScript class-style adapter with JSON admin config.
+
+| Script | Purpose |
+|---|---|
+| `npm run build` | Compile TypeScript sources |
+| `npm run check` | Type-check without emitting files |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run TypeScript and package tests |
+| `npm run test:integration` | Run ioBroker startup integration test |
+
 ## Development plan
 
-The current implementation plan is maintained outside this repository in Hermes during the planning phase. The first repo tasks are:
+The first repo tasks are:
 
 1. inspect `bluetti-official/bluetti-home-assistant`
 2. document verified auth/API endpoints in `docs/research/bluetti-ha-api-notes.md`
 3. confirm package/repo naming
 4. scaffold the TypeScript ioBroker adapter with `@iobroker/create-adapter`
 5. add ioBroker package, integration, lint, build, and repository checker gates
+6. implement read-only auth/polling against verified sanitized payloads
 
 ## License
 

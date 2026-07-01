@@ -1,0 +1,19 @@
+{
+	"i18n": true,
+	"type": "panel",
+	"items": {
+		"pollInterval": {
+			"type": "number",
+			"label": "pollInterval",
+			"help": "pollIntervalHelp",
+			"min": 60,
+			"max": 86400,
+			"newLine": true,
+			"xs": 12,
+			"sm": 12,
+			"md": 6,
+			"lg": 4,
+			"xl": 4
+		}
+	}
+}
