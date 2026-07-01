@@ -1,0 +1,209 @@
+# BLUETTI Auth, Token and Device Selection Flow
+
+Status: repository architecture plan for issue #15. This document is intended to be tracked in the GitHub repository so future implementation work can start from the same auth-flow assumptions and open questions. No production BLUETTI credentials are required for this document.
+
+## Decision
+
+Implementing a complete OAuth flow directly in code is **not** the next safe step yet.
+
+A small first implementation becomes reasonable only after one additional source-backed spike confirms the exact BLUETTI OAuth request/response details outside Home Assistant's OAuth helper:
+
+- whether BLUETTI accepts the dynamic ioBroker Admin callback URL as `redirect_uri`,
+- the exact authorization URL parameters,
+- the exact token exchange form/body and required headers,
+- whether refresh tokens are always returned and how expiry fields are shaped.
+
+The provider and tests already cover token injection, one refresh retry, token-expiry API code `805`, and cloud-vs-auth error mapping. The missing piece is the user-facing OAuth bootstrap and persistent token/device configuration.
+
+## Source-backed facts
+
+From the official Home Assistant integration, documented in `docs/research/bluetti-ha-api-notes.md`:
+
+| Area | Fact |
+|---|---|
+| Authorization endpoint | `https://sso.bluettipower.com/oauth2/grant` |
+| Token endpoint | `https://sso.bluettipower.com/oauth2/token` |
+| Client credential | client ID `HomeAssistant`, client secret `SG9tZUFzc2lzdGFudA==` |
+| Device list endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/devices` |
+| Device state endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/deviceStates?sns=<serial>` |
+| Device binding endpoint | `POST https://gw.bluettipower.com/api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": [...] }` |
+| REST auth header | Header name `Authorization`; value is the raw access-token string without `Bearer ` prefix |
+| Token expiry signal | HTTP 401/403 or BLUETTI API code `805` |
+
+From ioBroker Admin/adapter docs:
+
+- JSON config can use a `sendTo` button with `openUrl` to ask the adapter for an OAuth start URL and open it for the user.
+- Admin exposes `/oauth2_callbacks/<adapterNamespace>/`, then sends an `oauth2Callback` message to that adapter instance with the query parameters.
+- Sensitive adapter-native fields can be listed in `encryptedNative` and `protectedNative` in `io-package.json`. They are decrypted at adapter runtime but not stored in plaintext.
+- ioBroker's newer central credential storage exists, but it requires newer platform versions than this adapter currently declares. For the first implementation, encrypted/protected native config is the better fit.
+
+## Proposed user flow
+
+1. User opens the BLUETTI adapter instance configuration in ioBroker Admin.
+2. Admin shows:
+   - current auth status,
+   - **Authenticate with BLUETTI** button,
+   - device-selection control disabled until authentication succeeds,
+   - selected device serials/names after discovery.
+3. The button is a JSON-config `sendTo` action, for example command `getOAuthStartLink`, with `openUrl: true`.
+4. Adapter receives `getOAuthStartLink` and builds:
+   - a random `state` value,
+   - a callback URL: `${data._origin}oauth2_callbacks/${adapter.namespace}/`,
+   - the BLUETTI authorization URL with client ID, callback URL, and state.
+5. Admin opens the BLUETTI login/consent page.
+6. BLUETTI redirects to ioBroker Admin's callback URL with `code` and `state`.
+7. Admin sends `oauth2Callback` to the adapter instance.
+8. Adapter verifies `state`, exchanges `code` for token data, stores the token data encrypted, then fetches user products.
+9. User returns to the adapter configuration and selects one or more BLUETTI devices.
+10. Adapter calls `bindDevices` for selected serials and stores selected device metadata.
+
+## OAuth feasibility in ioBroker Admin
+
+OAuth is realistic in ioBroker Admin **if BLUETTI accepts the Admin callback URL dynamically**.
+
+Direct Admin callback is preferred because it keeps the flow local and does not require a production ioBroker cloud proxy. The likely callback shape is:
+
+```text
+http(s)://<admin-host>:<admin-port>/oauth2_callbacks/bluetti.0/
+```
+
+Risk: the Home Assistant integration uses Home Assistant's OAuth/application-credentials framework. If BLUETTI validates a fixed redirect URI registered for the `HomeAssistant` client, ioBroker cannot simply reuse a dynamic Admin callback URL. In that case, the choices are:
+
+1. request/coordinate a BLUETTI/ioBroker-compatible OAuth application or ioBroker OAuth cloud-code endpoint,
+2. use a documented fixed callback/proxy service,
+3. do not ship OAuth until BLUETTI provides a supported redirect strategy.
+
+Do **not** implement username/password scraping or browser automation as a fallback. That would be brittle and unsafe for a published adapter.
+
+## Callback and state handling
+
+The adapter should handle two message commands:
+
+| Command | Direction | Purpose |
+|---|---|---|
+| `getOAuthStartLink` | Admin → Adapter | Create state and return authorization URL via `{ openUrl }` |
+| `oauth2Callback` | Admin → Adapter | Validate callback query, exchange code, persist tokens, return `{ result }` or `{ error }` |
+
+State handling rules:
+
+- Generate a cryptographically random `state`.
+- Store the pending state with a short TTL, for example 10 minutes.
+- For the first implementation, in-memory state is acceptable; if the adapter restarts during login, the callback fails and the user retries.
+- A later hardening step can persist pending state in the instance data directory with TTL cleanup.
+- Never log `code`, access token, refresh token, or the full callback URL.
+
+## Token storage
+
+Store token data in adapter native config fields declared as both encrypted and protected in `io-package.json`.
+
+Proposed native fields:
+
+| Field | Sensitive | Purpose |
+|---|---:|---|
+| `oauthTokenJson` | yes | JSON string containing token response: access token, refresh token, created/expires fields |
+| `oauthLastRefresh` | no | Timestamp of the last refresh attempt/success for throttling |
+| `selectedDeviceSerials` | partly | Selected serials used for polling and bindDevices |
+| `selectedDevicesJson` | partly | Redacted/minimal metadata for Admin display: serial, model, name, online flag |
+| `authStatus` | no | Last high-level auth state for Admin display |
+
+`oauthTokenJson` must be in `encryptedNative` and `protectedNative`.
+
+Device serials are not OAuth secrets but can identify the user's hardware. They should not be logged in full. Whether to encrypt them is a product decision; protecting them is reasonable.
+
+Persisting refreshed token data requires updating the instance object, not only mutating `this.config`. The implementation should update `system.adapter.<namespace>.native` through ioBroker object APIs, preserving unrelated native fields.
+
+## Token refresh across adapter restarts
+
+On adapter start:
+
+1. Read and parse encrypted `oauthTokenJson` from `this.config`.
+2. If missing, set `info.connection = false` and auth status to `not_authenticated`; do not poll.
+3. Compute validity using:
+   - `expires_at - 30s`, or
+   - `created_at + expires_in - 30s`.
+4. If token is expired or near expiry, refresh before the first poll.
+5. Throttle refresh attempts, for example once per hour after a failed attempt, matching the Home Assistant integration's defensive behavior.
+6. Persist any successful refreshed token back to encrypted native config.
+7. Build the existing `BluettiCloudProvider` with a `BluettiTokenProvider` that:
+   - returns the current access token,
+   - refreshes and persists a token when requested,
+   - marks auth expired when provider sees HTTP 401/403 or API code `805`.
+
+Refresh errors must not be treated as BLUETTI device outages.
+
+## Device selection and bindDevices
+
+Device selection should happen after successful OAuth and before polling.
+
+Flow:
+
+1. Adapter calls `getUserProducts()` using the fresh token.
+2. Admin config obtains the device list through a `sendTo`/`selectSendTo` control, or the adapter stores the discovered list for display after OAuth callback.
+3. User selects one or more serials.
+4. Adapter calls `POST /api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": selectedSerials }`.
+5. Adapter stores selected serials and minimal metadata.
+6. Polling only uses selected serials.
+
+Representation:
+
+| Native/config value | Use |
+|---|---|
+| `selectedDeviceSerials: string[]` | Polling target list |
+| `selectedDevicesJson` | Admin display/cache, redacted in logs |
+| `bindDevices` result | Used only to confirm configuration; do not expose control states |
+
+The first implementation should keep this read-only. `fulfillment`/control endpoints remain out of scope.
+
+## Error taxonomy
+
+Auth, cloud, and device failures must remain separate because outage-health states depend on this distinction.
+
+| Source | Provider status | Adapter/auth state | `info.connection` | Outage model impact |
+|---|---|---|---:|---|
+| Missing token | `auth_failed` | `not_authenticated` | false | no outage suspicion |
+| Invalid/expired token, HTTP 401/403, API `805` | `auth_failed` | `reauth_required` | false | no outage suspicion |
+| Token refresh network timeout | `cloud_unreachable` | `refresh_deferred` | false | cloud unavailable, not device outage |
+| Gateway timeout/network error during poll | `cloud_unreachable` | `authenticated` | false | can mark telemetry stale |
+| Non-auth API error | `provider_error` | `authenticated` | false | provider/API failure |
+| Product `online != "1"` | `ok` | `authenticated` | false for that device | device offline signal |
+| Successful poll for at least one selected device | `ok` | `authenticated` | true | telemetry fresh |
+
+`info.connection` should be true only when authentication works and at least one selected device returns usable status/telemetry.
+
+## Minimal implementation sequence
+
+1. **OAuth spike/test harness**
+   - Build the authorization URL from ioBroker Admin origin and verify whether BLUETTI accepts the callback URL shape.
+   - Source or mock only; do not use real Pascal credentials in tests or logs.
+   - Document exact authorize/token parameters.
+
+2. **Token manager without polling lifecycle**
+   - Add `BluettiOAuthTokenProvider` or `BluettiStoredTokenProvider` as an isolated TypeScript class.
+   - Unit-test expiry calculation, refresh throttling, persistence callback, and redaction.
+   - Do not wire it into `main.ts` until tests are green.
+
+3. **Admin auth/device configuration**
+   - Add JSON config controls for auth button and device selection.
+   - Add adapter message handlers for `getOAuthStartLink`, `oauth2Callback`, `discoverDevices`, and `saveSelectedDevices`.
+   - Add encrypted/protected native fields in `io-package.json`.
+
+4. **Provider lifecycle integration**
+   - Wire token provider and selected serials into `src/main.ts`.
+   - Start polling only when authenticated and devices are selected.
+   - Keep telemetry object creation in the later telemetry issues (#4/#6) unless needed for a minimal `info.connection` proof.
+
+## Open questions before code for #15
+
+- Does BLUETTI accept a dynamic ioBroker Admin callback URL for the public `HomeAssistant` OAuth client?
+- Which exact parameters does BLUETTI require for the authorization URL?
+- Which exact request body/header shape is required at `/oauth2/token`?
+- Does refresh always return a `refresh_token`, and should the old refresh token be retained if omitted?
+- Are token expiry fields returned as `expires_at`, `expires_in`, `created_at`, or another shape?
+- Does `bindDevices` have to be called on every device selection update, or only for newly selected devices?
+- Should full serials be stored encrypted or only protected/redacted?
+
+## Recommendation for issue #15
+
+Use this document as the #15 implementation plan and do not wire a half-complete OAuth flow into `main.ts` yet.
+
+The next code change should be a small isolated token-manager/provider class with unit tests **after** the OAuth callback/token-exchange details are confirmed. That keeps the existing cloud provider testable and avoids creating a user-facing login button that may fail because BLUETTI rejects the redirect URI.

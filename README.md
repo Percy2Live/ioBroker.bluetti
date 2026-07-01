@@ -62,6 +62,11 @@ A cloud-only adapter **cannot prove a grid outage by itself**. It can only expos
 
 The adapter was scaffolded with `@iobroker/create-adapter` as a TypeScript class-style adapter with JSON admin config.
 
+## Architecture notes
+
+- [BLUETTI Home Assistant API notes](docs/research/bluetti-ha-api-notes.md) records the source-backed upstream OAuth, token, device, and telemetry findings.
+- [BLUETTI auth, token and device selection flow](docs/auth-flow.md) tracks the planned ioBroker OAuth/token/device-selection architecture for issue #15 and the open implementation questions before the adapter should expose a user-facing login flow.
+
 | Script | Purpose |
 |---|---|
 | `npm run build` | Compile TypeScript sources |
