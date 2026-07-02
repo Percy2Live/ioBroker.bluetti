@@ -116,6 +116,40 @@
 				"def": false
 			},
 			"native": {}
+		},
+		{
+			"_id": "status",
+			"type": "channel",
+			"common": {
+				"name": "Status"
+			},
+			"native": {}
+		},
+		{
+			"_id": "status.lastUpdate",
+			"type": "state",
+			"common": {
+				"role": "date",
+				"name": "Last successful poll",
+				"type": "string",
+				"read": true,
+				"write": false,
+				"def": ""
+			},
+			"native": {}
+		},
+		{
+			"_id": "status.lastError",
+			"type": "state",
+			"common": {
+				"role": "text",
+				"name": "Last poll error",
+				"type": "string",
+				"read": true,
+				"write": false,
+				"def": ""
+			},
+			"native": {}
 		}
 	],
 	"protectedNative": [
