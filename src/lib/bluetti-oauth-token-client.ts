@@ -79,8 +79,6 @@ export class BluettiOAuthTokenClient {
 	}
 
 	private async requestToken(params: Record<string, string>): Promise<BluettiOAuthToken> {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 		const body = this.buildRequestBody(params);
 
 		try {
@@ -91,7 +89,7 @@ export class BluettiOAuthTokenClient {
 					'Content-Type': 'application/x-www-form-urlencoded',
 				},
 				body,
-				signal: controller.signal,
+				signal: AbortSignal.timeout(this.requestTimeoutMs),
 			});
 
 			return await this.handleResponse(response);
@@ -111,8 +109,6 @@ export class BluettiOAuthTokenClient {
 				`BLUETTI OAuth token request failed: ${extractSafeErrorMessage(error)}`,
 				{ cause: error },
 			);
-		} finally {
-			clearTimeout(timeout);
 		}
 	}
 

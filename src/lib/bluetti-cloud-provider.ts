@@ -128,8 +128,6 @@ export class BluettiCloudProvider {
 		params: Record<string, string>,
 	): Promise<T> {
 		const url = this.buildUrl(path, params);
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 
 		try {
 			const response = await this.fetchImpl(url, {
@@ -138,7 +136,7 @@ export class BluettiCloudProvider {
 					// Verified from bluetti-official Home Assistant integration: bare token, no Bearer prefix.
 					Authorization: accessToken,
 				},
-				signal: controller.signal,
+				signal: AbortSignal.timeout(this.requestTimeoutMs),
 			});
 
 			return await this.handleResponse<T>(response);
@@ -159,8 +157,6 @@ export class BluettiCloudProvider {
 				'cloud_unreachable',
 				{ cause: error },
 			);
-		} finally {
-			clearTimeout(timeout);
 		}
 	}
 
