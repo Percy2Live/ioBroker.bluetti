@@ -3,13 +3,20 @@
  */
 
 import * as utils from '@iobroker/adapter-core';
-import { BluettiCloudProvider, BluettiCloudProviderError } from './lib/bluetti-cloud-provider';
+import { BluettiCloudProvider, BluettiCloudProviderError, type BluettiUserProduct } from './lib/bluetti-cloud-provider';
 import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti-device-selection';
 import { BluettiOAuthFlow, type BluettiOAuthStartLink } from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
 import { BluettiPollRunner } from './lib/bluetti-poll-runner';
-import { BluettiPollingPolicy } from './lib/bluetti-polling-policy';
+import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
 import { BluettiStoredTokenProvider, stringifyToken } from './lib/bluetti-stored-token-provider';
+import {
+	TELEMETRY_STATES,
+	mapDeviceMetadata,
+	mapHealth,
+	mapTelemetryFields,
+	type TelemetryValue,
+} from './lib/bluetti-telemetry-model';
 
 interface PendingOAuthCredentials {
 	clientId: string;
@@ -48,18 +55,20 @@ class Bluetti extends utils.Adapter {
 		const authStatus = this.config.oauthTokenJson ? 'authenticated' : 'not_authenticated';
 		await this.persistNativeAuthConfig({ authStatus });
 
-		this.startPolling();
+		await this.startPolling();
 	}
 
 	// Start the BLUETTI cloud poll loop, but only once authentication and a device
 	// have been configured. Without them polling would only ever fail, so we stay
 	// idle and leave info.connection false until the admin finishes setup.
-	private startPolling(): void {
+	private async startPolling(): Promise<void> {
 		const deviceSerial = (this.config.deviceSerial ?? '').trim();
 		if (!this.config.oauthTokenJson || deviceSerial === '') {
 			this.log.info('BLUETTI polling not started: authenticate and select a device in the adapter settings.');
 			return;
 		}
+
+		await this.ensureTelemetryObjects();
 
 		const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
 		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
@@ -67,7 +76,11 @@ class Bluetti extends utils.Adapter {
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
 			policy,
 			runPoll: async () => {
-				await provider.getDeviceStates(deviceSerial);
+				const products = await provider.getDeviceStates(deviceSerial);
+				const product = products.find(candidate => candidate.sn === deviceSerial) ?? products[0];
+				if (product) {
+					await this.writeTelemetry(product);
+				}
 			},
 			classifyError: error => (error instanceof BluettiCloudProviderError ? error.kind : 'network'),
 			setTimer: (callback, delayMs) => this.setTimeout(callback, delayMs),
@@ -76,14 +89,45 @@ class Bluetti extends utils.Adapter {
 				await this.setState('info.connection', true, true);
 				await this.setState('status.lastUpdate', new Date().toISOString(), true);
 				await this.setState('status.lastError', '', true);
+				await this.writeHealth(policy.health());
 			},
 			onFailure: async (kind, error) => {
 				await this.setState('info.connection', false, true);
 				await this.setState('status.lastError', `${kind}: ${extractSafeErrorMessage(error)}`, true);
+				await this.writeHealth(policy.health());
 			},
 		});
 		this.pollRunner.start();
 		this.log.info(`BLUETTI polling started for device ${deviceSerial} (interval ${this.config.pollInterval}s).`);
+	}
+
+	// Creates the centralized read-only telemetry objects (channels + states) if
+	// they do not exist yet.
+	private async ensureTelemetryObjects(): Promise<void> {
+		const channels = new Set<string>();
+		for (const def of TELEMETRY_STATES) {
+			channels.add(def.id.split('.')[0]);
+		}
+		for (const channel of channels) {
+			await this.setObjectNotExistsAsync(channel, { type: 'channel', common: { name: channel }, native: {} });
+		}
+		for (const def of TELEMETRY_STATES) {
+			await this.setObjectNotExistsAsync(def.id, { type: 'state', common: { ...def.common }, native: {} });
+		}
+	}
+
+	private async writeTelemetry(product: BluettiUserProduct): Promise<void> {
+		await this.writeStateValues({ ...mapDeviceMetadata(product), ...mapTelemetryFields(product) });
+	}
+
+	private async writeHealth(health: BluettiPollingHealth): Promise<void> {
+		await this.writeStateValues(mapHealth(health));
+	}
+
+	private async writeStateValues(values: Record<string, TelemetryValue>): Promise<void> {
+		for (const [id, value] of Object.entries(values)) {
+			await this.setState(id, value, true);
+		}
 	}
 
 	private onMessage(message: ioBroker.Message): void {
