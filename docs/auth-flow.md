@@ -37,6 +37,12 @@ From ioBroker Admin/adapter docs:
 - Sensitive adapter-native fields can be listed in `encryptedNative` and `protectedNative` in `io-package.json`. They are decrypted at adapter runtime but not stored in plaintext.
 - ioBroker's newer central credential storage exists, but it requires newer platform versions than this adapter currently declares. For the first implementation, encrypted/protected native config is the better fit.
 
+OAuth endpoint smoke check, 2026-07-02:
+
+- A GET request to `https://sso.bluettipower.com/oauth2/grant` with `response_type=code`, `client_id=HomeAssistant`, a local ioBroker-style `redirect_uri` (`http://127.0.0.1:8081/oauth2_callbacks/bluetti.0/`), and a random `state` returned HTTP 200 with the BLUETTI login page.
+- This confirms BLUETTI does not reject the dynamic callback URL before login.
+- It does **not** prove that the post-login redirect and token exchange succeed with an ioBroker callback URL.
+
 ## Proposed user flow
 
 1. User opens the BLUETTI adapter instance configuration in ioBroker Admin.
@@ -172,15 +178,16 @@ Auth, cloud, and device failures must remain separate because outage-health stat
 
 ## Minimal implementation sequence
 
-1. **OAuth spike/test harness**
-   - Build the authorization URL from ioBroker Admin origin and verify whether BLUETTI accepts the callback URL shape.
-   - Source or mock only; do not use real Pascal credentials in tests or logs.
-   - Document exact authorize/token parameters.
+1. **OAuth start-link/state helper**
+   - `src/lib/bluetti-oauth-flow.ts` builds the authorization URL from ioBroker Admin origin and adapter namespace.
+   - It uses a 10-minute in-memory `state` TTL, validates callback state/code, rejects OAuth errors, and consumes states once to prevent replay.
+   - Unit tests cover URL parameters, callback normalization, one-shot state consumption, expiry, and OAuth error callbacks.
+   - This helper is intentionally not wired into `main.ts` yet.
 
 2. **Token manager without polling lifecycle**
-   - Add `BluettiOAuthTokenProvider` or `BluettiStoredTokenProvider` as an isolated TypeScript class.
-   - Unit-test expiry calculation, refresh throttling, persistence callback, and redaction.
-   - Do not wire it into `main.ts` until tests are green.
+   - `src/lib/bluetti-stored-token-provider.ts` parses encrypted `oauthTokenJson`, exposes the existing `BluettiTokenProvider` interface, and stays independent from `main.ts`.
+   - It supports `expires_at` and `created_at + expires_in`, a 30-second expiry buffer, explicit `markTokenExpired()`, refresh throttling after failures, refresh-token retention when BLUETTI omits a new refresh token, and a persistence callback for refreshed token JSON.
+   - Unit tests cover expiry calculation, refresh, persistence, refresh throttling, malformed stored data, retained refresh tokens, and redaction.
 
 3. **Admin auth/device configuration**
    - Add JSON config controls for auth button and device selection.
