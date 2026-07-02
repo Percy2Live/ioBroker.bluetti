@@ -7,7 +7,11 @@ import { BluettiOAuthFlow, BluettiOAuthFlowError, buildIoBrokerOAuthCallbackUrl 
 
 describe('BluettiOAuthFlow', () => {
 	it('builds a BLUETTI authorization URL for the ioBroker Admin callback', () => {
-		const flow = new BluettiOAuthFlow({ randomState: () => 'fixed-state', now: () => 1_000 });
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			randomState: () => 'fixed-state',
+			now: () => 1_000,
+		});
 		const startLink = flow.createStartLink('https://iobroker.example/', 'bluetti.0');
 		const authorizationUrl = new URL(startLink.authorizationUrl);
 
@@ -17,19 +21,23 @@ describe('BluettiOAuthFlow', () => {
 		expect(authorizationUrl.origin).to.equal('https://sso.bluettipower.com');
 		expect(authorizationUrl.pathname).to.equal('/oauth2/grant');
 		expect(authorizationUrl.searchParams.get('response_type')).to.equal('code');
-		expect(authorizationUrl.searchParams.get('client_id')).to.equal('HomeAssistant');
+		expect(authorizationUrl.searchParams.get('client_id')).to.equal('test-client-id');
 		expect(authorizationUrl.searchParams.get('redirect_uri')).to.equal(startLink.callbackUrl);
 		expect(authorizationUrl.searchParams.get('state')).to.equal('fixed-state');
 	});
 
 	it('normalizes callback origins and namespaces', () => {
-		expect(buildIoBrokerOAuthCallbackUrl('http://127.0.0.1:8081////', '/bluetti.0/')).to.equal(
+		expect(buildIoBrokerOAuthCallbackUrl('http://127.0.0.1:8081/admin////', '/bluetti.0/')).to.equal(
 			'http://127.0.0.1:8081/oauth2_callbacks/bluetti.0/',
 		);
 	});
 
 	it('consumes a valid callback once', () => {
-		const flow = new BluettiOAuthFlow({ randomState: () => 'one-shot-state', now: () => 10 });
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			randomState: () => 'one-shot-state',
+			now: () => 10,
+		});
 		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
 
 		expect(flow.consumeCallback({ code: 'oauth-code', state: 'one-shot-state' })).to.deep.equal({
@@ -45,7 +53,12 @@ describe('BluettiOAuthFlow', () => {
 
 	it('rejects expired callback states', () => {
 		let now = 100;
-		const flow = new BluettiOAuthFlow({ randomState: () => 'expired-state', stateTtlMs: 5, now: () => now });
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			randomState: () => 'expired-state',
+			stateTtlMs: 5,
+			now: () => now,
+		});
 		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
 
 		now = 106;
@@ -57,7 +70,7 @@ describe('BluettiOAuthFlow', () => {
 	});
 
 	it('rejects OAuth callback errors without requiring a code', () => {
-		const flow = new BluettiOAuthFlow({ randomState: () => 'error-state' });
+		const flow = new BluettiOAuthFlow({ clientId: 'test-client-id', randomState: () => 'error-state' });
 		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
 
 		try {
@@ -73,7 +86,12 @@ describe('BluettiOAuthFlow', () => {
 	it('drops expired pending states while creating new start links', () => {
 		let now = 1_000;
 		let nextState = 'first-state';
-		const flow = new BluettiOAuthFlow({ stateTtlMs: 10, now: () => now, randomState: () => nextState });
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			stateTtlMs: 10,
+			now: () => now,
+			randomState: () => nextState,
+		});
 
 		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
 		expect(flow.getPendingStateCount()).to.equal(1);

@@ -5,6 +5,12 @@ declare global {
 	namespace ioBroker {
 		interface AdapterConfig {
 			pollInterval: number;
+			oauthClientId?: string;
+			oauthClientSecret?: string;
+			oauthTokenJson?: string;
+			oauthLastRefresh?: string;
+			authStatus?: string;
+			deviceSerial?: string;
 		}
 	}
 }

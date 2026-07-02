@@ -23,7 +23,7 @@ From the official Home Assistant integration, documented in `docs/research/bluet
 |---|---|
 | Authorization endpoint | `https://sso.bluettipower.com/oauth2/grant` |
 | Token endpoint | `https://sso.bluettipower.com/oauth2/token` |
-| Client credential | client ID `HomeAssistant`, client secret `SG9tZUFzc2lzdGFudA==` |
+| Client credential | configured through ioBroker native config (`oauthClientId`, `oauthClientSecret`); no default client secret is hardcoded in the adapter |
 | Device list endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/devices` |
 | Device state endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/deviceStates?sns=<serial>` |
 | Device binding endpoint | `POST https://gw.bluettipower.com/api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": [...] }` |
@@ -190,17 +190,23 @@ Auth, cloud, and device failures must remain separate because outage-health stat
    - Unit tests cover expiry calculation, refresh, persistence, refresh throttling, malformed stored data, retained refresh tokens, and redaction.
 
 3. **OAuth token exchange client**
-   - `src/lib/bluetti-oauth-token-client.ts` posts standard OAuth form bodies to `/oauth2/token` using the upstream Home Assistant client id/secret.
+   - `src/lib/bluetti-oauth-token-client.ts` posts standard OAuth form bodies to `/oauth2/token` using credentials provided by ioBroker native config.
    - It supports `authorization_code` exchange and `refresh_token` refresh with injected `fetchImpl`, timeout handling, structured errors, response normalization, and redaction.
    - Unit tests cover request body/header shape, created-at normalization, refresh requests, OAuth errors, HTTP errors, invalid responses, timeout, network errors, and secret redaction.
    - The request shape is source-backed by the Home Assistant integration and OAuth conventions; the post-login exchange still needs a live ioBroker callback test.
 
-4. **Admin auth/device configuration**
-   - Add JSON config controls for auth button and device selection.
-   - Add adapter message handlers for `getOAuthStartLink`, `oauth2Callback`, `discoverDevices`, and `saveSelectedDevices`.
-   - Add encrypted/protected native fields in `io-package.json`.
+4. **Admin auth configuration and callback wiring**
+   - `admin/jsonConfig.json` now has OAuth client-id/client-secret inputs, an auth-status textSendTo field, and a `sendTo` auth button for `getOAuthStartLink`.
+   - `io-package.json` enables `messagebox` and stores `oauthClientSecret`/`oauthTokenJson` as protected and encrypted native fields.
+   - `src/main.ts` handles `getOAuthStartLink`, `oauth2Callback`, and `getAuthStatus`, persists token JSON server-side, and does not return token material to Admin responses.
+   - Device discovery/selection is still intentionally not wired.
 
-5. **Provider lifecycle integration**
+5. **Admin device selection**
+   - Add JSON config controls for device selection.
+   - Add adapter message handlers for `discoverDevices` and `saveSelectedDevices`.
+   - Store selected serials in protected/encrypted native fields if full serials are retained.
+
+6. **Provider lifecycle integration**
    - Wire token provider and selected serials into `src/main.ts`.
    - Start polling only when authenticated and devices are selected.
    - Keep telemetry object creation in the later telemetry issues (#4/#6) unless needed for a minimal `info.connection` proof.
@@ -216,6 +222,6 @@ Auth, cloud, and device failures must remain separate because outage-health stat
 
 ## Recommendation for issue #15
 
-Use this document as the #15 implementation plan and do not wire a half-complete OAuth flow into `main.ts` yet.
+Use this document as the #15 implementation plan. The current branch wires the login smoke-test path only; do not add device selection or telemetry polling until the ioBroker Admin callback has been live-tested.
 
-The next code change should wire the isolated auth pieces into Admin/main.ts in a thin path: native encrypted token fields, `getOAuthStartLink`, `oauth2Callback`, token persistence, and no polling lifecycle yet. That creates a real login smoke test without mixing in device selection or telemetry.
+The next code change should add device discovery/selection as a separate Admin step: instantiate the stored token provider from encrypted native config, call the verified device-list endpoint, present serial/name/status choices, and persist selected serials without starting telemetry polling yet.

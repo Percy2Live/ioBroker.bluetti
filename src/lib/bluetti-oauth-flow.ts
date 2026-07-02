@@ -5,11 +5,11 @@ import { randomBytes } from 'node:crypto';
 export const BLUETTI_SSO_BASE_URL = 'https://sso.bluettipower.com';
 export const BLUETTI_OAUTH_AUTHORIZE_PATH = '/oauth2/grant';
 export const BLUETTI_OAUTH_TOKEN_PATH = '/oauth2/token';
-export const BLUETTI_OAUTH_CLIENT_ID = 'HomeAssistant';
 
 const DEFAULT_STATE_TTL_MS = 10 * 60 * 1000;
 
 export interface BluettiOAuthFlowOptions {
+	clientId: string;
 	ssoBaseUrl?: string;
 	stateTtlMs?: number;
 	randomState?: () => string;
@@ -47,13 +47,15 @@ export class BluettiOAuthFlowError extends Error {
 }
 
 export class BluettiOAuthFlow {
+	private readonly clientId: string;
 	private readonly ssoBaseUrl: string;
 	private readonly stateTtlMs: number;
 	private readonly randomState: () => string;
 	private readonly now: () => number;
 	private readonly pendingStates = new Map<string, PendingOAuthState>();
 
-	public constructor(options: BluettiOAuthFlowOptions = {}) {
+	public constructor(options: BluettiOAuthFlowOptions) {
+		this.clientId = requireNonEmptyString(options.clientId, 'BLUETTI OAuth client ID');
 		this.ssoBaseUrl = (options.ssoBaseUrl ?? BLUETTI_SSO_BASE_URL).replace(/\/$/, '');
 		this.stateTtlMs = options.stateTtlMs ?? DEFAULT_STATE_TTL_MS;
 		this.randomState = options.randomState ?? createRandomState;
@@ -67,7 +69,7 @@ export class BluettiOAuthFlow {
 		const authorizationUrl = new URL(`${this.ssoBaseUrl}${BLUETTI_OAUTH_AUTHORIZE_PATH}`);
 
 		authorizationUrl.searchParams.set('response_type', 'code');
-		authorizationUrl.searchParams.set('client_id', BLUETTI_OAUTH_CLIENT_ID);
+		authorizationUrl.searchParams.set('client_id', this.clientId);
 		authorizationUrl.searchParams.set('redirect_uri', callbackUrl);
 		authorizationUrl.searchParams.set('state', state);
 
@@ -131,7 +133,10 @@ export class BluettiOAuthFlow {
 }
 
 export function buildIoBrokerOAuthCallbackUrl(adminOrigin: string, adapterNamespace: string): string {
-	const origin = adminOrigin.trim().replace(/\/+$/, '');
+	const origin = adminOrigin
+		.trim()
+		.replace(/\/+$/, '')
+		.replace(/\/admin$/i, '');
 	const namespace = adapterNamespace.trim().replace(/^\/+|\/+$/g, '');
 
 	if (!origin) {
@@ -143,6 +148,15 @@ export function buildIoBrokerOAuthCallbackUrl(adminOrigin: string, adapterNamesp
 	}
 
 	return `${origin}/oauth2_callbacks/${encodeURIComponent(namespace)}/`;
+}
+
+function requireNonEmptyString(value: string, label: string): string {
+	const trimmedValue = value.trim();
+	if (!trimmedValue) {
+		throw new BluettiOAuthFlowError('missing_state', `${label} is required`);
+	}
+
+	return trimmedValue;
 }
 
 function createRandomState(): string {
