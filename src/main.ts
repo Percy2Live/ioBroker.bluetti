@@ -3,9 +3,11 @@
  */
 
 import * as utils from '@iobroker/adapter-core';
+import { BluettiCloudProvider } from './lib/bluetti-cloud-provider';
+import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti-device-selection';
 import { BluettiOAuthFlow, type BluettiOAuthStartLink } from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
-import { stringifyToken } from './lib/bluetti-stored-token-provider';
+import { BluettiStoredTokenProvider, stringifyToken } from './lib/bluetti-stored-token-provider';
 
 interface PendingOAuthCredentials {
 	clientId: string;
@@ -66,6 +68,9 @@ class Bluetti extends utils.Adapter {
 				case 'getAuthStatus':
 					this.sendMessageResponse(message, this.createAuthStatusResponse());
 					break;
+				case 'getDevices':
+					this.sendMessageResponse(message, await this.handleGetDevices());
+					break;
 				default:
 					this.sendMessageResponse(message, { error: `Unsupported BLUETTI command: ${message.command}` });
 			}
@@ -125,6 +130,37 @@ class Bluetti extends utils.Adapter {
 		return {
 			result: 'authenticated',
 		};
+	}
+
+	// Lists the BLUETTI devices bound to the authenticated account for the
+	// jsonConfig device selector. Returns an empty list (never an error) so a
+	// missing/expired login just yields no options instead of flipping authStatus.
+	private async handleGetDevices(): Promise<BluettiDeviceSelectItem[]> {
+		const clientId = this.config.oauthClientId ?? '';
+		const clientSecret = this.config.oauthClientSecret ?? '';
+
+		const tokenProvider = new BluettiStoredTokenProvider({
+			oauthTokenJson: this.config.oauthTokenJson,
+			refreshToken: async currentToken => {
+				const tokenClient = new BluettiOAuthTokenClient({ clientId, clientSecret });
+				return await tokenClient.refreshToken(currentToken.refresh_token ?? '');
+			},
+			persistToken: async (_token, oauthTokenJson) => {
+				await this.persistNativeAuthConfig({
+					oauthTokenJson,
+					oauthLastRefresh: new Date().toISOString(),
+				});
+			},
+		});
+
+		try {
+			const provider = new BluettiCloudProvider({ tokenProvider });
+			const products = await provider.getUserProducts();
+			return toDeviceSelectItems(products);
+		} catch (error) {
+			this.log.warn(`BLUETTI device list unavailable: ${extractSafeErrorMessage(error)}`);
+			return [];
+		}
 	}
 
 	private createAuthStatusResponse(): { text: string } {

@@ -10,6 +10,7 @@ declare global {
 			oauthTokenJson?: string;
 			oauthLastRefresh?: string;
 			authStatus?: string;
+			deviceSerial?: string;
 		}
 	}
 }

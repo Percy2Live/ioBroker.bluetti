@@ -5,6 +5,7 @@
 		"authHeader": {
 			"type": "header",
 			"text": "authHeader",
+			"size": 2,
 			"newLine": true,
 			"xs": 12
 		},
@@ -51,6 +52,19 @@
 			"showProcess": true,
 			"timeout": 15000,
 			"jsonData": "{\"adminOrigin\":\"${data._origin}\",\"oauthClientId\":\"${data.oauthClientId}\",\"oauthClientSecret\":\"${data.oauthClientSecret}\"}",
+			"newLine": true,
+			"xs": 12,
+			"sm": 12,
+			"md": 6,
+			"lg": 4,
+			"xl": 4
+		},
+		"deviceSerial": {
+			"type": "selectSendTo",
+			"label": "deviceSelection",
+			"help": "deviceSelectionHelp",
+			"command": "getDevices",
+			"jsonData": "{}",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,
