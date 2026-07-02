@@ -1,5 +1,12 @@
 {
 	"bluetti adapter settings": "Adapter settings for BLUETTI",
 	"pollInterval": "Poll interval (seconds)",
-	"pollIntervalHelp": "Minimum time between BLUETTI telemetry polls. The first implementation remains read-only."
+	"pollIntervalHelp": "Minimum time between BLUETTI telemetry polls. The first implementation remains read-only.",
+	"authHeader": "BLUETTI authentication",
+	"authStatus": "Authentication status",
+	"oauthClientId": "OAuth client ID",
+	"oauthClientIdHelp": "BLUETTI OAuth client ID. Store it in the adapter config before authenticating.",
+	"oauthClientSecret": "OAuth client secret",
+	"oauthClientSecretHelp": "BLUETTI OAuth client secret. It is stored encrypted/protected by ioBroker.",
+	"authenticateWithBluetti": "Authenticate with BLUETTI"
 }

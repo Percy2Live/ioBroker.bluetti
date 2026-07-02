@@ -82,10 +82,16 @@
 			{
 				"admin": ">=7.6.20"
 			}
-		]
+		],
+		"messagebox": true
 	},
 	"native": {
-		"pollInterval": 300
+		"pollInterval": 300,
+		"oauthClientId": "",
+		"oauthClientSecret": "",
+		"oauthTokenJson": "",
+		"oauthLastRefresh": "",
+		"authStatus": "not_authenticated"
 	},
 	"objects": [],
 	"instanceObjects": [
@@ -110,5 +116,15 @@
 			},
 			"native": {}
 		}
+	],
+	"protectedNative": [
+		"oauthClientSecret",
+		"oauthTokenJson",
+		"selectedDeviceSerials",
+		"selectedDevicesJson"
+	],
+	"encryptedNative": [
+		"oauthClientSecret",
+		"oauthTokenJson"
 	]
 }

@@ -5,6 +5,9 @@ import { expect } from 'chai';
 // @ts-expect-error Runtime import resolved by ts-node.
 import { BluettiOAuthTokenClient, BluettiOAuthTokenClientError } from './bluetti-oauth-token-client.ts';
 
+const TEST_CLIENT_ID = 'test-client-id';
+const TEST_CLIENT_SECRET = 'test-client-secret';
+
 interface FetchCall {
 	url: string;
 	init?: RequestInit;
@@ -53,6 +56,16 @@ function requestHeaders(init?: RequestInit): Record<string, string> {
 	return init?.headers as Record<string, string>;
 }
 
+function createClient(
+	options: Omit<ConstructorParameters<typeof BluettiOAuthTokenClient>[0], 'clientId' | 'clientSecret'>,
+): InstanceType<typeof BluettiOAuthTokenClient> {
+	return new BluettiOAuthTokenClient({
+		clientId: TEST_CLIENT_ID,
+		clientSecret: TEST_CLIENT_SECRET,
+		...options,
+	});
+}
+
 describe('BluettiOAuthTokenClient', () => {
 	it('exchanges an authorization code using the BLUETTI token endpoint form body', async () => {
 		const calls: FetchCall[] = [];
@@ -67,7 +80,7 @@ describe('BluettiOAuthTokenClient', () => {
 				}),
 			);
 		};
-		const client = new BluettiOAuthTokenClient({ fetchImpl, now: () => 1_700_000_000_000 });
+		const client = createClient({ fetchImpl, now: () => 1_700_000_000_000 });
 
 		const token = await client.exchangeAuthorizationCode(
 			'callback-code-secret',
@@ -87,8 +100,8 @@ describe('BluettiOAuthTokenClient', () => {
 		expect(body.get('grant_type')).to.equal('authorization_code');
 		expect(body.get('code')).to.equal('callback-code-secret');
 		expect(body.get('redirect_uri')).to.equal('http://127.0.0.1:8081/oauth2_callbacks/bluetti.0/');
-		expect(body.get('client_id')).to.equal('HomeAssistant');
-		expect(body.get('client_secret')).to.equal('SG9tZUFzc2lzdGFudA==');
+		expect(body.get('client_id')).to.equal(TEST_CLIENT_ID);
+		expect(body.get('client_secret')).to.equal(TEST_CLIENT_SECRET);
 	});
 
 	it('refreshes a token using grant_type refresh_token', async () => {
@@ -102,7 +115,7 @@ describe('BluettiOAuthTokenClient', () => {
 				}),
 			);
 		};
-		const client = new BluettiOAuthTokenClient({ fetchImpl });
+		const client = createClient({ fetchImpl });
 
 		const token = await client.refreshToken('refresh-token-secret');
 
@@ -122,7 +135,7 @@ describe('BluettiOAuthTokenClient', () => {
 					error_description: 'refresh_token=refresh-token-secret code=callback-code-secret',
 				}),
 			);
-		const client = new BluettiOAuthTokenClient({ fetchImpl });
+		const client = createClient({ fetchImpl });
 
 		try {
 			await client.refreshToken('refresh-token-secret');
@@ -136,7 +149,7 @@ describe('BluettiOAuthTokenClient', () => {
 	});
 
 	it('maps HTTP and invalid JSON responses to structured errors', async () => {
-		const httpClient = new BluettiOAuthTokenClient({
+		const httpClient = createClient({
 			fetchImpl: () => Promise.resolve(textResponse('access_token=leaked-access-token-secret', 500)),
 		});
 
@@ -149,7 +162,7 @@ describe('BluettiOAuthTokenClient', () => {
 			expect((error as Error).message).not.to.include('leaked-access-token-secret');
 		}
 
-		const invalidClient = new BluettiOAuthTokenClient({
+		const invalidClient = createClient({
 			fetchImpl: () => Promise.resolve(jsonResponse({ refresh_token: 'refresh-without-access-secret' })),
 		});
 
@@ -163,7 +176,7 @@ describe('BluettiOAuthTokenClient', () => {
 	});
 
 	it('maps timeouts and network errors to structured errors', async () => {
-		const timeoutClient = new BluettiOAuthTokenClient({
+		const timeoutClient = createClient({
 			requestTimeoutMs: 1,
 			fetchImpl: (_input, init) => {
 				return new Promise<Response>((_resolve, reject) => {
@@ -184,7 +197,7 @@ describe('BluettiOAuthTokenClient', () => {
 			expect((error as InstanceType<typeof BluettiOAuthTokenClientError>).reason).to.equal('timeout');
 		}
 
-		const networkClient = new BluettiOAuthTokenClient({
+		const networkClient = createClient({
 			fetchImpl: () => Promise.reject(new Error('client_secret=secret-value refresh_token=refresh-token-secret')),
 		});
 

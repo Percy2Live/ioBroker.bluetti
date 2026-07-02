@@ -4,16 +4,14 @@ import type { BluettiOAuthToken } from './bluetti-stored-token-provider';
 
 export const BLUETTI_OAUTH_TOKEN_BASE_URL = 'https://sso.bluettipower.com';
 export const BLUETTI_OAUTH_TOKEN_PATH = '/oauth2/token';
-export const BLUETTI_OAUTH_DEFAULT_CLIENT_ID = 'HomeAssistant';
-export const BLUETTI_OAUTH_DEFAULT_CLIENT_SECRET = 'SG9tZUFzc2lzdGFudA==';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface BluettiOAuthTokenClientOptions {
+	clientId: string;
+	clientSecret: string;
 	fetchImpl?: typeof fetch;
 	ssoBaseUrl?: string;
-	clientId?: string;
-	clientSecret?: string;
 	requestTimeoutMs?: number;
 	now?: () => number;
 }
@@ -47,11 +45,11 @@ export class BluettiOAuthTokenClient {
 	private readonly requestTimeoutMs: number;
 	private readonly now: () => number;
 
-	public constructor(options: BluettiOAuthTokenClientOptions = {}) {
+	public constructor(options: BluettiOAuthTokenClientOptions) {
 		this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
 		this.tokenUrl = `${(options.ssoBaseUrl ?? BLUETTI_OAUTH_TOKEN_BASE_URL).replace(/\/$/, '')}${BLUETTI_OAUTH_TOKEN_PATH}`;
-		this.clientId = options.clientId ?? BLUETTI_OAUTH_DEFAULT_CLIENT_ID;
-		this.clientSecret = options.clientSecret ?? BLUETTI_OAUTH_DEFAULT_CLIENT_SECRET;
+		this.clientId = requireNonEmptyString(options.clientId, 'BLUETTI OAuth client ID');
+		this.clientSecret = requireNonEmptyString(options.clientSecret, 'BLUETTI OAuth client secret');
 		this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 		this.now = options.now ?? Date.now;
 
@@ -152,6 +150,15 @@ export class BluettiOAuthTokenClient {
 
 		return normalizeTokenResponse(body, this.now);
 	}
+}
+
+function requireNonEmptyString(value: string, label: string): string {
+	const trimmedValue = value.trim();
+	if (!trimmedValue) {
+		throw new BluettiOAuthTokenClientError('invalid_response', `${label} is required`);
+	}
+
+	return trimmedValue;
 }
 
 function normalizeTokenResponse(body: unknown, now: () => number): BluettiOAuthToken {
