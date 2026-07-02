@@ -3,10 +3,12 @@
  */
 
 import * as utils from '@iobroker/adapter-core';
-import { BluettiCloudProvider } from './lib/bluetti-cloud-provider';
+import { BluettiCloudProvider, BluettiCloudProviderError } from './lib/bluetti-cloud-provider';
 import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti-device-selection';
 import { BluettiOAuthFlow, type BluettiOAuthStartLink } from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
+import { BluettiPollRunner } from './lib/bluetti-poll-runner';
+import { BluettiPollingPolicy } from './lib/bluetti-polling-policy';
 import { BluettiStoredTokenProvider, stringifyToken } from './lib/bluetti-stored-token-provider';
 
 interface PendingOAuthCredentials {
@@ -22,6 +24,7 @@ type NativeAuthConfigUpdate = Partial<
 class Bluetti extends utils.Adapter {
 	private oauthFlow?: BluettiOAuthFlow;
 	private readonly pendingOAuthCredentials = new Map<string, PendingOAuthCredentials>();
+	private pollRunner?: BluettiPollRunner<ioBroker.Timeout | undefined>;
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
@@ -45,7 +48,42 @@ class Bluetti extends utils.Adapter {
 		const authStatus = this.config.oauthTokenJson ? 'authenticated' : 'not_authenticated';
 		await this.persistNativeAuthConfig({ authStatus });
 
-		this.log.info(`BLUETTI adapter scaffold ready; poll interval: ${this.config.pollInterval} seconds`);
+		this.startPolling();
+	}
+
+	// Start the BLUETTI cloud poll loop, but only once authentication and a device
+	// have been configured. Without them polling would only ever fail, so we stay
+	// idle and leave info.connection false until the admin finishes setup.
+	private startPolling(): void {
+		const deviceSerial = (this.config.deviceSerial ?? '').trim();
+		if (!this.config.oauthTokenJson || deviceSerial === '') {
+			this.log.info('BLUETTI polling not started: authenticate and select a device in the adapter settings.');
+			return;
+		}
+
+		const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
+		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
+
+		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
+			policy,
+			runPoll: async () => {
+				await provider.getDeviceStates(deviceSerial);
+			},
+			classifyError: error => (error instanceof BluettiCloudProviderError ? error.kind : 'network'),
+			setTimer: (callback, delayMs) => this.setTimeout(callback, delayMs),
+			clearTimer: handle => this.clearTimeout(handle),
+			onSuccess: async () => {
+				await this.setState('info.connection', true, true);
+				await this.setState('status.lastUpdate', new Date().toISOString(), true);
+				await this.setState('status.lastError', '', true);
+			},
+			onFailure: async (kind, error) => {
+				await this.setState('info.connection', false, true);
+				await this.setState('status.lastError', `${kind}: ${extractSafeErrorMessage(error)}`, true);
+			},
+		});
+		this.pollRunner.start();
+		this.log.info(`BLUETTI polling started for device ${deviceSerial} (interval ${this.config.pollInterval}s).`);
 	}
 
 	private onMessage(message: ioBroker.Message): void {
@@ -132,14 +170,12 @@ class Bluetti extends utils.Adapter {
 		};
 	}
 
-	// Lists the BLUETTI devices bound to the authenticated account for the
-	// jsonConfig device selector. Returns an empty list (never an error) so a
-	// missing/expired login just yields no options instead of flipping authStatus.
-	private async handleGetDevices(): Promise<BluettiDeviceSelectItem[]> {
+	// Builds a token provider over the stored OAuth token, refreshing via the
+	// configured client credentials and persisting rotated tokens to native config.
+	private createStoredTokenProvider(): BluettiStoredTokenProvider {
 		const clientId = this.config.oauthClientId ?? '';
 		const clientSecret = this.config.oauthClientSecret ?? '';
-
-		const tokenProvider = new BluettiStoredTokenProvider({
+		return new BluettiStoredTokenProvider({
 			oauthTokenJson: this.config.oauthTokenJson,
 			refreshToken: async currentToken => {
 				const tokenClient = new BluettiOAuthTokenClient({ clientId, clientSecret });
@@ -152,9 +188,14 @@ class Bluetti extends utils.Adapter {
 				});
 			},
 		});
+	}
 
+	// Lists the BLUETTI devices bound to the authenticated account for the
+	// jsonConfig device selector. Returns an empty list (never an error) so a
+	// missing/expired login just yields no options instead of flipping authStatus.
+	private async handleGetDevices(): Promise<BluettiDeviceSelectItem[]> {
 		try {
-			const provider = new BluettiCloudProvider({ tokenProvider });
+			const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
 			const products = await provider.getUserProducts();
 			return toDeviceSelectItems(products);
 		} catch (error) {
@@ -197,6 +238,7 @@ class Bluetti extends utils.Adapter {
 	 */
 	private onUnload(callback: () => void): void {
 		try {
+			this.pollRunner?.stop();
 			callback();
 		} catch (error) {
 			this.log.error(`Error during unloading: ${extractSafeErrorMessage(error)}`);
