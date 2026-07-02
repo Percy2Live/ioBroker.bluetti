@@ -189,23 +189,28 @@ Auth, cloud, and device failures must remain separate because outage-health stat
    - It supports `expires_at` and `created_at + expires_in`, a 30-second expiry buffer, explicit `markTokenExpired()`, refresh throttling after failures, refresh-token retention when BLUETTI omits a new refresh token, and a persistence callback for refreshed token JSON.
    - Unit tests cover expiry calculation, refresh, persistence, refresh throttling, malformed stored data, retained refresh tokens, and redaction.
 
-3. **Admin auth/device configuration**
+3. **OAuth token exchange client**
+   - `src/lib/bluetti-oauth-token-client.ts` posts standard OAuth form bodies to `/oauth2/token` using the upstream Home Assistant client id/secret.
+   - It supports `authorization_code` exchange and `refresh_token` refresh with injected `fetchImpl`, timeout handling, structured errors, response normalization, and redaction.
+   - Unit tests cover request body/header shape, created-at normalization, refresh requests, OAuth errors, HTTP errors, invalid responses, timeout, network errors, and secret redaction.
+   - The request shape is source-backed by the Home Assistant integration and OAuth conventions; the post-login exchange still needs a live ioBroker callback test.
+
+4. **Admin auth/device configuration**
    - Add JSON config controls for auth button and device selection.
    - Add adapter message handlers for `getOAuthStartLink`, `oauth2Callback`, `discoverDevices`, and `saveSelectedDevices`.
    - Add encrypted/protected native fields in `io-package.json`.
 
-4. **Provider lifecycle integration**
+5. **Provider lifecycle integration**
    - Wire token provider and selected serials into `src/main.ts`.
    - Start polling only when authenticated and devices are selected.
    - Keep telemetry object creation in the later telemetry issues (#4/#6) unless needed for a minimal `info.connection` proof.
 
-## Open questions before code for #15
+## Open questions before wiring #15 into Admin/main.ts
 
-- Does BLUETTI accept a dynamic ioBroker Admin callback URL for the public `HomeAssistant` OAuth client?
-- Which exact parameters does BLUETTI require for the authorization URL?
-- Which exact request body/header shape is required at `/oauth2/token`?
-- Does refresh always return a `refresh_token`, and should the old refresh token be retained if omitted?
-- Are token expiry fields returned as `expires_at`, `expires_in`, `created_at`, or another shape?
+- Does BLUETTI accept the dynamic ioBroker Admin callback URL after login, not only for the initial login page?
+- Does `/oauth2/token` accept the standard form body implemented in `BluettiOAuthTokenClient`, or does BLUETTI require Basic auth or another variant despite the Home Assistant credential setup?
+- Does refresh always return a `refresh_token`, and should the old refresh token be retained if omitted? The current token provider retains it defensively.
+- Are token expiry fields returned as `expires_at`, `expires_in`, `created_at`, or another shape? The current code supports the known Home Assistant shapes.
 - Does `bindDevices` have to be called on every device selection update, or only for newly selected devices?
 - Should full serials be stored encrypted or only protected/redacted?
 
@@ -213,4 +218,4 @@ Auth, cloud, and device failures must remain separate because outage-health stat
 
 Use this document as the #15 implementation plan and do not wire a half-complete OAuth flow into `main.ts` yet.
 
-The next code change should be a small isolated token-manager/provider class with unit tests **after** the OAuth callback/token-exchange details are confirmed. That keeps the existing cloud provider testable and avoids creating a user-facing login button that may fail because BLUETTI rejects the redirect URI.
+The next code change should wire the isolated auth pieces into Admin/main.ts in a thin path: native encrypted token fields, `getOAuthStartLink`, `oauth2Callback`, token persistence, and no polling lifecycle yet. That creates a real login smoke test without mixing in device selection or telemetry.
