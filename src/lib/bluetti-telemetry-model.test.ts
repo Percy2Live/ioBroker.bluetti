@@ -66,13 +66,33 @@ describe('bluetti telemetry model', () => {
 	});
 
 	describe('mapTelemetryFields', () => {
-		it('is empty by default until verified fnCodes are added (#9)', () => {
+		it('maps the candidate EL30V2 fnCodes from the default field map', () => {
 			const values = mapTelemetryFields({
 				sn: 'SN1',
 				online: '1',
-				stateList: [{ fnCode: 'anything', fnValue: 42 }],
+				stateList: [
+					{ fnCode: 'SOC', fnValue: 73 },
+					{ fnCode: 'PVAllTotalPower', fnValue: '120' },
+					{ fnCode: 'GridAllTotalPower', fnValue: 0 },
+					{ fnCode: 'ACLoadAllTotalPower', fnValue: 240 },
+					{ fnCode: 'DCLoadAllTotalPower', fnValue: 12 },
+					{ fnCode: 'SomeUnknownCode', fnValue: 999 },
+				],
 			});
-			expect(values).to.deep.equal({});
+			expect(values).to.deep.equal({
+				'battery.soc': 73,
+				'power.pvInput': 120,
+				'power.gridInput': 0,
+				'power.acOutput': 240,
+				'power.dcOutput': 12,
+			});
+		});
+
+		it('every field-map target is a defined telemetry state', () => {
+			const ids = new Set(TELEMETRY_STATES.map(s => s.id));
+			for (const target of Object.values(telemetry.TELEMETRY_FIELD_MAP)) {
+				expect(ids.has(target), `${target} must be a defined state`).to.equal(true);
+			}
 		});
 
 		it('maps numeric fnValues via an injected field map and ignores unknown/non-numeric', () => {
