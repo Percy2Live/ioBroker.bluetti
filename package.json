@@ -74,5 +74,10 @@
   "bugs": {
     "url": "https://github.com/Percy2Live/ioBroker.bluetti/issues"
   },
+  "overrides": {
+    "@iobroker/adapter-dev": {
+      "yargs": "^17.7.2"
+    }
+  },
   "readmeFilename": "README.md"
 }
