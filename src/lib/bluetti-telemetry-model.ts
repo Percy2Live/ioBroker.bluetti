@@ -38,9 +38,9 @@ export const DEVICE_STATES: readonly TelemetryStateDef[] = [
 	},
 ];
 
-// Battery/power telemetry (Elite 30 V2 feature matrix). Objects are defined here;
-// live values are populated once verified EL30V2 fnCodes are added to
-// TELEMETRY_FIELD_MAP (#9). The mapper is generic, so #9 only extends the table.
+// Battery/power telemetry (Elite 30 V2 feature matrix). Live values are populated
+// from TELEMETRY_FIELD_MAP; its fnCodes are upstream candidates pending real-payload
+// verification (#9), so the objects are stable even if a code needs correcting.
 export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 	{
 		id: 'battery.soc',
@@ -111,10 +111,20 @@ export const TELEMETRY_STATES: readonly TelemetryStateDef[] = [
 	...HEALTH_STATES,
 ];
 
-// Maps verified BLUETTI stateList `fnCode` values to state ids. Intentionally
-// empty for v0.1: the concrete EL30V2 fnCodes are not source-verified yet and are
-// added in #9. Until then live SOC/power objects exist but stay unpopulated.
-export const TELEMETRY_FIELD_MAP: Readonly<Record<string, string>> = {};
+// Maps BLUETTI stateList `fnCode` values to state ids.
+//
+// These are CANDIDATE codes from the upstream Home Assistant integration's
+// `icon_config.py` (see docs/research/bluetti-ha-api-notes.md), NOT yet confirmed
+// against a real EL30V2 `stateList` payload — the exact EL30V2 fnCode set is still
+// open (#9). Unknown codes are ignored by the mapper, so a wrong candidate yields
+// no value rather than bad data. Finalize once a real payload is available.
+export const TELEMETRY_FIELD_MAP: Readonly<Record<string, string>> = {
+	SOC: 'battery.soc',
+	PVAllTotalPower: 'power.pvInput',
+	GridAllTotalPower: 'power.gridInput',
+	ACLoadAllTotalPower: 'power.acOutput',
+	DCLoadAllTotalPower: 'power.dcOutput',
+};
 
 export function toTelemetryNumber(raw: unknown): number | null {
 	if (typeof raw === 'number') {
