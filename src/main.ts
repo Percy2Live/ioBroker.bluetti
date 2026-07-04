@@ -182,8 +182,19 @@ class Bluetti extends utils.Adapter {
 			throw new Error(`Cannot find ${adapterObjectId} to persist BLUETTI auth configuration`);
 		}
 
+		const currentNative = adapterObject.native ?? {};
+		// Writing the adapter object makes js-controller restart the instance. Skip the
+		// write when nothing actually changed, otherwise onReady() persists on every start
+		// and the instance crash-loops (see #32).
+		const hasChanges = (Object.keys(changes) as Array<keyof NativeAuthConfigUpdate>).some(
+			key => currentNative[key] !== changes[key],
+		);
+		if (!hasChanges) {
+			return;
+		}
+
 		adapterObject.native = {
-			...(adapterObject.native ?? {}),
+			...currentNative,
 			...changes,
 		};
 		await this.setForeignObjectAsync(adapterObjectId, adapterObject);
