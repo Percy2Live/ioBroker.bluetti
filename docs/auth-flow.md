@@ -1,5 +1,30 @@
 # BLUETTI Auth, Token and Device Selection Flow
 
+> **Implementation status (2026-07): implemented and verified live.**
+> The OAuth login, token exchange/refresh, device discovery/selection, and read-only polling
+> are implemented and were confirmed end-to-end against a real BLUETTI account (Elite 30 V2) on
+> js-controller 7.0.7. The sections below are the **original design plan** and are kept for
+> history; where they disagree with the implementation, the following notes win:
+>
+> - **Default client credentials are shipped.** BLUETTI's SSO issues no per-user OAuth client;
+>   the adapter defaults to the fixed client used by the official Home Assistant integration
+>   (`client_id=HomeAssistant`, `client_secret=SG9tZUFzc2lzdGFudA==`, sent verbatim — it is *not*
+>   base64-decoded). The Admin client-id/secret fields are optional overrides, not required input.
+> - **The rotating OAuth token is stored in an encrypted state (`auth.tokenJson`), not in native
+>   config.** Every write to `system.adapter.<ns>` restarts the instance, so persisting the token
+>   (or transient auth status) to native caused restart loops on login and on every token refresh.
+>   `authStatus` is derived live from token presence; `oauthLastRefresh` was dropped.
+> - **The dynamic ioBroker Admin callback URL works.** BLUETTI accepts it at both authorize and
+>   token steps; there is no fixed redirect-URI whitelist for this client.
+> - **The token exchange uses a standard form body** (client_id/secret in the body, no Basic auth,
+>   no PKCE, no scope). The authorization `code` arrives percent-encoded from Admin and must be
+>   URL-decoded before the token request, otherwise BLUETTI rejects it with `invalid_grant`.
+> - **REST calls send the access token without a `Bearer ` prefix.**
+>
+> The open questions at the bottom of this document are resolved by the above. One known
+> follow-up remains: BLUETTI's token-expiry field is not yet parsed, so the token refreshes on
+> every poll (harmless since the token lives in a state, but wasteful).
+
 Status: repository architecture plan for issue #15. This document is intended to be tracked in the GitHub repository so future implementation work can start from the same auth-flow assumptions and open questions. No production BLUETTI credentials are required for this document.
 
 ## Decision
