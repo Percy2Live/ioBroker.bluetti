@@ -4,6 +4,7 @@ export const BLUETTI_GATEWAY_BASE_URL = 'https://gw.bluettipower.com';
 
 const USER_DEVICES_PATH = '/api/bluiotdata/ha/v1/devices';
 const DEVICE_STATES_PATH = '/api/bluiotdata/ha/v1/deviceStates';
+const BIND_DEVICES_PATH = '/api/bluiotdata/ha/v1/bindDevices';
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 export type BluettiCloudStatusState = 'ok' | 'auth_failed' | 'cloud_unreachable' | 'provider_error';
@@ -100,6 +101,48 @@ export class BluettiCloudProvider {
 
 	public async getDeviceStates(serial: string): Promise<BluettiUserProduct[]> {
 		return await this.request<BluettiUserProduct[]>('GET', DEVICE_STATES_PATH, { sns: serial });
+	}
+
+	// Binds the selected device serials to the current API session. The deviceStates
+	// endpoint only returns live telemetry for devices bound to the token — an unbound
+	// device reports isBindByCurUser="0", online="0" and an empty stateList. Mirrors the
+	// official HA integration, which calls bind_devices() for the selected serials.
+	public async bindDevices(serials: string[]): Promise<void> {
+		const accessToken = await this.tokenProvider.getAccessToken();
+		const url = this.buildUrl(BIND_DEVICES_PATH, {});
+		const response = await this.fetchImpl(url, {
+			method: 'POST',
+			headers: {
+				Authorization: accessToken,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ bindSnList: serials }),
+			signal: AbortSignal.timeout(this.requestTimeoutMs),
+		});
+
+		if (response.status === 401 || response.status === 403) {
+			await this.tokenProvider.markTokenExpired?.();
+			throw new BluettiCloudProviderError('BLUETTI bindDevices authentication failed', 'auth', 'auth_failed', {
+				httpStatus: response.status,
+			});
+		}
+
+		if (!response.ok) {
+			throw new BluettiCloudProviderError(
+				`BLUETTI bindDevices HTTP error ${response.status}`,
+				'http',
+				'provider_error',
+				{ httpStatus: response.status },
+			);
+		}
+
+		const body = await response.json().catch(() => undefined);
+		const apiCode = readApiCode(body);
+		if (apiCode !== undefined && apiCode !== 0) {
+			throw new BluettiCloudProviderError('BLUETTI bindDevices returned an error', 'api', 'provider_error', {
+				apiCode,
+			});
+		}
 	}
 
 	private async request<T>(method: 'GET', path: string, params: Record<string, string> = {}): Promise<T> {

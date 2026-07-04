@@ -100,6 +100,41 @@ describe('BluettiCloudProvider', () => {
 		expect(calls[0].url).to.equal('https://gw.bluettipower.com/api/bluiotdata/ha/v1/deviceStates?sns=EL30V2-SN');
 	});
 
+	it('binds selected devices with a bindSnList POST body', async () => {
+		const calls: FetchCall[] = [];
+		const tokenProvider: BluettiTokenProvider = {
+			getAccessToken: () => Promise.resolve('state-token-secret'),
+		};
+		const fetchImpl: typeof fetch = (input, init) => {
+			calls.push({ url: requestUrl(input), init });
+			return Promise.resolve(jsonResponse({ msgCode: 0, data: null }));
+		};
+
+		const provider = new BluettiCloudProvider({ tokenProvider, fetchImpl });
+		await provider.bindDevices(['EL30V2-SN']);
+
+		expect(calls).to.have.length(1);
+		expect(calls[0].url).to.equal('https://gw.bluettipower.com/api/bluiotdata/ha/v1/bindDevices');
+		expect(calls[0].init?.method).to.equal('POST');
+		expect(calls[0].init?.body).to.equal('{"bindSnList":["EL30V2-SN"]}');
+	});
+
+	it('throws when bindDevices returns a non-zero API code', async () => {
+		const tokenProvider: BluettiTokenProvider = {
+			getAccessToken: () => Promise.resolve('state-token-secret'),
+		};
+		const fetchImpl: typeof fetch = () => Promise.resolve(jsonResponse({ msgCode: 500, data: null }));
+
+		const provider = new BluettiCloudProvider({ tokenProvider, fetchImpl });
+		let caught: unknown;
+		try {
+			await provider.bindDevices(['EL30V2-SN']);
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught).to.be.instanceOf(BluettiCloudProviderError);
+	});
+
 	it('marks an expired token, refreshes it once and retries auth failures', async () => {
 		const calls: FetchCall[] = [];
 		let markTokenExpiredCalls = 0;

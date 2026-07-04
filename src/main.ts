@@ -122,6 +122,17 @@ class Bluetti extends utils.Adapter {
 		await this.ensureTelemetryObjects();
 
 		const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
+
+		// Bind the selected device to this API session before polling. Without it the
+		// deviceStates endpoint reports the device as unbound/offline with an empty
+		// stateList, so no telemetry is ever written. A bind failure is non-fatal: log it
+		// and still start the poll loop.
+		try {
+			await provider.bindDevices([deviceSerial]);
+		} catch (error) {
+			this.log.warn(`BLUETTI device binding failed; telemetry may stay empty: ${extractSafeErrorMessage(error)}`);
+		}
+
 		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
 
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
