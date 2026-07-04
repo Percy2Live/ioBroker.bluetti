@@ -147,7 +147,7 @@ class Bluetti extends utils.Adapter {
 		try {
 			switch (message.command) {
 				case 'getOAuthStartLink':
-					this.sendMessageResponse(message, await this.handleGetOAuthStartLink(message.message));
+					this.sendMessageResponse(message, this.handleGetOAuthStartLink(message.message));
 					break;
 				case 'oauth2Callback':
 					this.sendMessageResponse(message, await this.handleOAuthCallback(message.message));
@@ -162,14 +162,16 @@ class Bluetti extends utils.Adapter {
 					this.sendMessageResponse(message, { error: `Unsupported BLUETTI command: ${message.command}` });
 			}
 		} catch (error) {
-			await this.persistNativeAuthConfig({ authStatus: 'auth_failed' });
+			// Do NOT persist the failure into native config here: writing
+			// system.adapter.<ns> makes js-controller restart the instance, which drops
+			// the in-memory OAuth flow mid-login and breaks the callback (see #32). The
+			// error is reported to admin via the message response instead.
+			this.log.warn(`BLUETTI message "${message.command}" failed: ${extractSafeErrorMessage(error)}`);
 			this.sendMessageResponse(message, { error: extractSafeErrorMessage(error) });
 		}
 	}
 
-	private async handleGetOAuthStartLink(
-		payload: unknown,
-	): Promise<{ openUrl: string; window: string; saveConfig: boolean }> {
+	private handleGetOAuthStartLink(payload: unknown): { openUrl: string; window: string; saveConfig: boolean } {
 		const message = readObject(payload);
 		const adminOrigin = readRequiredString(message, 'adminOrigin');
 		// BLUETTI issues no per-user OAuth clients, so blank fields fall back to the
@@ -186,7 +188,12 @@ class Bluetti extends utils.Adapter {
 			clientSecret,
 			callbackUrl: startLink.callbackUrl,
 		});
-		await this.persistNativeAuthConfig({ authStatus: 'authentication_started' });
+		// The pending login (oauthFlow + pendingOAuthCredentials) lives in process
+		// memory and must survive until the OAuth callback returns. Persisting a
+		// transient 'authentication_started' status here would write system.adapter.<ns>,
+		// which makes js-controller restart the instance and wipe that memory — the
+		// callback would then fail with "no pending login" (see #32). So we do not
+		// persist during the flow; the admin tracks progress via the sendTo response.
 
 		return createOAuthStartResponse(startLink);
 	}
