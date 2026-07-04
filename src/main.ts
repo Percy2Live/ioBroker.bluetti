@@ -33,6 +33,10 @@ type NativeAuthConfigUpdate = Partial<
 	Pick<ioBroker.AdapterConfig, 'authStatus' | 'oauthLastRefresh' | 'oauthTokenJson'>
 >;
 
+// Native keys declared in io-package `encryptedNative`; js-controller auto-decrypts
+// these into this.config on load, so they must be stored encrypted (see persistNativeAuthConfig).
+const ENCRYPTED_NATIVE_KEYS = new Set<string>(['oauthTokenJson']);
+
 class Bluetti extends utils.Adapter {
 	private oauthFlow?: BluettiOAuthFlow;
 	private readonly pendingOAuthCredentials = new Map<string, PendingOAuthCredentials>();
@@ -300,10 +304,21 @@ class Bluetti extends utils.Adapter {
 			return;
 		}
 
-		adapterObject.native = {
-			...currentNative,
-			...changes,
-		};
+		const nextNative: Record<string, unknown> = { ...currentNative };
+		for (const [key, value] of Object.entries(changes)) {
+			// oauthTokenJson is declared in io-package `encryptedNative`, so js-controller
+			// auto-decrypts it into this.config on the next start. Anything stored there
+			// must therefore be encrypted — writing plaintext would be "decrypted" into
+			// garbage after the token-write restart, breaking every later cloud request
+			// with "OAuth token JSON is invalid". Encrypt on write; keep the plaintext in
+			// this.config so the current session keeps working.
+			nextNative[key] =
+				ENCRYPTED_NATIVE_KEYS.has(key) && typeof value === 'string' && value !== ''
+					? this.encrypt(value)
+					: value;
+		}
+
+		adapterObject.native = nextNative;
 		await this.setForeignObjectAsync(adapterObjectId, adapterObject);
 		Object.assign(this.config, changes);
 	}
