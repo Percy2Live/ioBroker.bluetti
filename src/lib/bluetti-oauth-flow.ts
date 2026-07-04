@@ -102,10 +102,11 @@ export class BluettiOAuthFlow {
 			throw new BluettiOAuthFlowError('oauth_error', `BLUETTI OAuth callback failed: ${oauthError}`);
 		}
 
-		const state = readSingleString(query.state);
-		if (!state) {
+		const rawState = readSingleString(query.state);
+		if (!rawState) {
 			throw new BluettiOAuthFlowError('missing_state', 'BLUETTI OAuth callback is missing state');
 		}
+		const state = decodeCallbackParam(rawState);
 
 		const pendingState = this.pendingStates.get(state);
 		if (!pendingState) {
@@ -121,10 +122,11 @@ export class BluettiOAuthFlow {
 			throw new BluettiOAuthFlowError('state_expired', 'BLUETTI OAuth callback state has expired');
 		}
 
-		const code = readSingleString(query.code);
-		if (!code) {
+		const rawCode = readSingleString(query.code);
+		if (!rawCode) {
 			throw new BluettiOAuthFlowError('missing_code', 'BLUETTI OAuth callback is missing code');
 		}
+		const code = decodeCallbackParam(rawCode);
 
 		return { code, state };
 	}
@@ -173,6 +175,24 @@ function requireNonEmptyString(value: string, label: string): string {
 
 function createRandomState(): string {
 	return randomBytes(24).toString('base64url');
+}
+
+// The ioBroker admin forwards the raw, still percent-encoded OAuth callback query
+// values. A base64 authorization code therefore arrives with its "=" padding as
+// "%3D" (and "+"/"/" as "%2B"/"%2F"); passing it verbatim into the token request
+// double-encodes it, so BLUETTI rejects the exchange with "invalid_grant: Wrong
+// authorize code". Percent-decode when the value still looks encoded. A correctly
+// decoded code/state never contains a "%", so the guard prevents double-decoding.
+function decodeCallbackParam(value: string): string {
+	if (!/%[0-9A-Fa-f]{2}/.test(value)) {
+		return value;
+	}
+
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return value;
+	}
 }
 
 function readSingleString(value: unknown): string | undefined {
