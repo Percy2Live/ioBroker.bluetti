@@ -51,6 +51,35 @@ describe('BluettiOAuthFlow', () => {
 		);
 	});
 
+	it('percent-decodes a still-encoded base64 authorization code', () => {
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			randomState: () => 'one-shot-state',
+			now: () => 10,
+		});
+		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
+
+		// The admin forwards the raw query, so the "=" padding arrives as "%3D".
+		expect(flow.consumeCallback({ code: 'EApYoX3qew%3D%3D', state: 'one-shot-state' })).to.deep.equal({
+			code: 'EApYoX3qew==',
+			state: 'one-shot-state',
+		});
+	});
+
+	it('leaves an already-decoded authorization code untouched', () => {
+		const flow = new BluettiOAuthFlow({
+			clientId: 'test-client-id',
+			randomState: () => 'one-shot-state',
+			now: () => 10,
+		});
+		flow.createStartLink('http://127.0.0.1:8081', 'bluetti.0');
+
+		expect(flow.consumeCallback({ code: 'plain-code==', state: 'one-shot-state' })).to.deep.equal({
+			code: 'plain-code==',
+			state: 'one-shot-state',
+		});
+	});
+
 	it('rejects expired callback states', () => {
 		let now = 100;
 		const flow = new BluettiOAuthFlow({
