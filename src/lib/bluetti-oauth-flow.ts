@@ -6,6 +6,14 @@ export const BLUETTI_SSO_BASE_URL = 'https://sso.bluettipower.com';
 export const BLUETTI_OAUTH_AUTHORIZE_PATH = '/oauth2/grant';
 export const BLUETTI_OAUTH_TOKEN_PATH = '/oauth2/token';
 
+// BLUETTI's SSO does not issue per-user OAuth clients. The official BLUETTI Home
+// Assistant integration ships a single fixed client, and the same credentials work
+// against the /oauth2/grant + /oauth2/token endpoints this adapter targets. Use them
+// as the default so users don't have to supply credentials they cannot obtain; the
+// admin config still allows overriding both (see #34).
+export const BLUETTI_DEFAULT_CLIENT_ID = 'HomeAssistant';
+export const BLUETTI_DEFAULT_CLIENT_SECRET = 'HomeAssistant';
+
 const DEFAULT_STATE_TTL_MS = 10 * 60 * 1000;
 
 export interface BluettiOAuthFlowOptions {

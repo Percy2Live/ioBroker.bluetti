@@ -5,7 +5,12 @@
 import * as utils from '@iobroker/adapter-core';
 import { BluettiCloudProvider, BluettiCloudProviderError, type BluettiUserProduct } from './lib/bluetti-cloud-provider';
 import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti-device-selection';
-import { BluettiOAuthFlow, type BluettiOAuthStartLink } from './lib/bluetti-oauth-flow';
+import {
+	BluettiOAuthFlow,
+	BLUETTI_DEFAULT_CLIENT_ID,
+	BLUETTI_DEFAULT_CLIENT_SECRET,
+	type BluettiOAuthStartLink,
+} from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
 import { BluettiPollRunner } from './lib/bluetti-poll-runner';
 import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
@@ -167,8 +172,10 @@ class Bluetti extends utils.Adapter {
 	): Promise<{ openUrl: string; window: string; saveConfig: boolean }> {
 		const message = readObject(payload);
 		const adminOrigin = readRequiredString(message, 'adminOrigin');
-		const clientId = readRequiredString(message, 'oauthClientId');
-		const clientSecret = readRequiredString(message, 'oauthClientSecret');
+		// BLUETTI issues no per-user OAuth clients, so blank fields fall back to the
+		// shared default credentials instead of failing the flow (see #34).
+		const clientId = readOptionalString(message, 'oauthClientId') ?? BLUETTI_DEFAULT_CLIENT_ID;
+		const clientSecret = readOptionalString(message, 'oauthClientSecret') ?? BLUETTI_DEFAULT_CLIENT_SECRET;
 
 		this.oauthFlow = new BluettiOAuthFlow({ clientId });
 		this.pendingOAuthCredentials.clear();
@@ -217,8 +224,8 @@ class Bluetti extends utils.Adapter {
 	// Builds a token provider over the stored OAuth token, refreshing via the
 	// configured client credentials and persisting rotated tokens to native config.
 	private createStoredTokenProvider(): BluettiStoredTokenProvider {
-		const clientId = this.config.oauthClientId ?? '';
-		const clientSecret = this.config.oauthClientSecret ?? '';
+		const clientId = this.resolveClientId();
+		const clientSecret = this.resolveClientSecret();
 		return new BluettiStoredTokenProvider({
 			oauthTokenJson: this.config.oauthTokenJson,
 			refreshToken: async currentToken => {
@@ -258,6 +265,14 @@ class Bluetti extends utils.Adapter {
 		if (message.callback) {
 			this.sendTo(message.from, message.command, response, message.callback);
 		}
+	}
+
+	private resolveClientId(): string {
+		return this.config.oauthClientId?.trim() || BLUETTI_DEFAULT_CLIENT_ID;
+	}
+
+	private resolveClientSecret(): string {
+		return this.config.oauthClientSecret?.trim() || BLUETTI_DEFAULT_CLIENT_SECRET;
 	}
 
 	private async persistNativeAuthConfig(changes: NativeAuthConfigUpdate): Promise<void> {
@@ -332,6 +347,15 @@ function readRequiredString(payload: Record<string, unknown>, property: string):
 	const value = payload[property];
 	if (typeof value !== 'string' || !value.trim()) {
 		throw new Error(`Missing BLUETTI OAuth parameter: ${property}`);
+	}
+
+	return value.trim();
+}
+
+function readOptionalString(payload: Record<string, unknown>, property: string): string | undefined {
+	const value = payload[property];
+	if (typeof value !== 'string' || !value.trim()) {
+		return undefined;
 	}
 
 	return value.trim();
