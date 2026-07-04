@@ -11,8 +11,12 @@ export const BLUETTI_OAUTH_TOKEN_PATH = '/oauth2/token';
 // against the /oauth2/grant + /oauth2/token endpoints this adapter targets. Use them
 // as the default so users don't have to supply credentials they cannot obtain; the
 // admin config still allows overriding both (see #34).
+//
+// The secret is the literal string HA passes to the token endpoint. It looks like
+// base64 but must be sent verbatim — decoding it to "HomeAssistant" is what caused
+// the SSO to reject the exchange with "invalid_secret" (see #36 live test / #38).
 export const BLUETTI_DEFAULT_CLIENT_ID = 'HomeAssistant';
-export const BLUETTI_DEFAULT_CLIENT_SECRET = 'HomeAssistant';
+export const BLUETTI_DEFAULT_CLIENT_SECRET = 'SG9tZUFzc2lzdGFudA==';
 
 const DEFAULT_STATE_TTL_MS = 10 * 60 * 1000;
 
