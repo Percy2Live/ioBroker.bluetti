@@ -29,18 +29,19 @@ interface PendingOAuthCredentials {
 	callbackUrl: string;
 }
 
-type NativeAuthConfigUpdate = Partial<
-	Pick<ioBroker.AdapterConfig, 'authStatus' | 'oauthLastRefresh' | 'oauthTokenJson'>
->;
-
-// Native keys declared in io-package `encryptedNative`; js-controller auto-decrypts
-// these into this.config on load, so they must be stored encrypted (see persistNativeAuthConfig).
-const ENCRYPTED_NATIVE_KEYS = new Set<string>(['oauthTokenJson']);
+// The rotating OAuth token is stored in this state, NOT in the adapter's native
+// config: any write to system.adapter.<ns> makes js-controller restart the instance,
+// so persisting a refreshed token to native would restart the adapter on every token
+// rotation (and refresh runs whenever the token is near expiry). States can be written
+// freely without a restart. The value is encrypted with this.encrypt() at rest.
+const TOKEN_STATE_ID = 'auth.tokenJson';
 
 class Bluetti extends utils.Adapter {
 	private oauthFlow?: BluettiOAuthFlow;
 	private readonly pendingOAuthCredentials = new Map<string, PendingOAuthCredentials>();
 	private pollRunner?: BluettiPollRunner<ioBroker.Timeout | undefined>;
+	// Plaintext OAuth token JSON held in memory; persisted (encrypted) to TOKEN_STATE_ID.
+	private oauthTokenJson = '';
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
@@ -61,10 +62,51 @@ class Bluetti extends utils.Adapter {
 		// are validated with sanitized real-world data.
 		await this.setState('info.connection', false, true);
 
-		const authStatus = this.config.oauthTokenJson ? 'authenticated' : 'not_authenticated';
-		await this.persistNativeAuthConfig({ authStatus });
+		await this.ensureAuthObjects();
+		this.oauthTokenJson = await this.loadStoredToken();
 
 		await this.startPolling();
+	}
+
+	// Creates the internal auth channel/state that holds the encrypted OAuth token.
+	private async ensureAuthObjects(): Promise<void> {
+		await this.setObjectNotExistsAsync('auth', { type: 'channel', common: { name: 'Authentication' }, native: {} });
+		await this.setObjectNotExistsAsync(TOKEN_STATE_ID, {
+			type: 'state',
+			common: {
+				name: 'Encrypted OAuth token',
+				type: 'string',
+				role: 'text',
+				read: false,
+				write: false,
+			},
+			native: {},
+		});
+	}
+
+	// Loads the stored OAuth token from the auth state (decrypting it). Falls back to a
+	// legacy token in native config (pre-#42 storage) and migrates it into the state, so
+	// an already-authenticated user does not have to log in again after upgrading.
+	private async loadStoredToken(): Promise<string> {
+		const state = await this.getStateAsync(TOKEN_STATE_ID);
+		if (typeof state?.val === 'string' && state.val) {
+			return this.decrypt(state.val);
+		}
+
+		const legacy = (this.config.oauthTokenJson ?? '').trim();
+		if (legacy) {
+			await this.persistTokenJson(legacy);
+			return legacy;
+		}
+
+		return '';
+	}
+
+	// Persists the OAuth token JSON to the auth state (encrypted) and keeps the in-memory
+	// copy in sync. Unlike a native-config write, this does NOT restart the instance.
+	private async persistTokenJson(tokenJson: string): Promise<void> {
+		this.oauthTokenJson = tokenJson;
+		await this.setStateAsync(TOKEN_STATE_ID, this.encrypt(tokenJson), true);
 	}
 
 	// Start the BLUETTI cloud poll loop, but only once authentication and a device
@@ -72,7 +114,7 @@ class Bluetti extends utils.Adapter {
 	// idle and leave info.connection false until the admin finishes setup.
 	private async startPolling(): Promise<void> {
 		const deviceSerial = (this.config.deviceSerial ?? '').trim();
-		if (!this.config.oauthTokenJson || deviceSerial === '') {
+		if (!this.oauthTokenJson || deviceSerial === '') {
 			this.log.info('BLUETTI polling not started: authenticate and select a device in the adapter settings.');
 			return;
 		}
@@ -220,34 +262,26 @@ class Bluetti extends utils.Adapter {
 			clientSecret: pendingCredentials.clientSecret,
 		});
 		const token = await tokenClient.exchangeAuthorizationCode(callback.code, pendingCredentials.callbackUrl);
-		const native = {
-			authStatus: 'authenticated',
-			oauthLastRefresh: new Date().toISOString(),
-			oauthTokenJson: stringifyToken(token),
-		} satisfies NativeAuthConfigUpdate;
-		await this.persistNativeAuthConfig(native);
+		await this.persistTokenJson(stringifyToken(token));
 
 		return {
 			result: 'authenticated',
 		};
 	}
 
-	// Builds a token provider over the stored OAuth token, refreshing via the
-	// configured client credentials and persisting rotated tokens to native config.
+	// Builds a token provider over the stored OAuth token, refreshing via the configured
+	// client credentials and persisting rotated tokens to the auth state (no restart).
 	private createStoredTokenProvider(): BluettiStoredTokenProvider {
 		const clientId = this.resolveClientId();
 		const clientSecret = this.resolveClientSecret();
 		return new BluettiStoredTokenProvider({
-			oauthTokenJson: this.config.oauthTokenJson,
+			oauthTokenJson: this.oauthTokenJson,
 			refreshToken: async currentToken => {
 				const tokenClient = new BluettiOAuthTokenClient({ clientId, clientSecret });
 				return await tokenClient.refreshToken(currentToken.refresh_token ?? '');
 			},
 			persistToken: async (_token, oauthTokenJson) => {
-				await this.persistNativeAuthConfig({
-					oauthTokenJson,
-					oauthLastRefresh: new Date().toISOString(),
-				});
+				await this.persistTokenJson(oauthTokenJson);
 			},
 		});
 	}
@@ -268,7 +302,7 @@ class Bluetti extends utils.Adapter {
 
 	private createAuthStatusResponse(): { text: string } {
 		return {
-			text: this.config.authStatus ?? (this.config.oauthTokenJson ? 'authenticated' : 'not_authenticated'),
+			text: this.oauthTokenJson ? 'authenticated' : 'not_authenticated',
 		};
 	}
 
@@ -284,43 +318,6 @@ class Bluetti extends utils.Adapter {
 
 	private resolveClientSecret(): string {
 		return this.config.oauthClientSecret?.trim() || BLUETTI_DEFAULT_CLIENT_SECRET;
-	}
-
-	private async persistNativeAuthConfig(changes: NativeAuthConfigUpdate): Promise<void> {
-		const adapterObjectId = `system.adapter.${this.namespace}`;
-		const adapterObject = await this.getForeignObjectAsync(adapterObjectId);
-		if (!adapterObject) {
-			throw new Error(`Cannot find ${adapterObjectId} to persist BLUETTI auth configuration`);
-		}
-
-		const currentNative = adapterObject.native ?? {};
-		// Writing the adapter object makes js-controller restart the instance. Skip the
-		// write when nothing actually changed, otherwise onReady() persists on every start
-		// and the instance crash-loops (see #32).
-		const hasChanges = (Object.keys(changes) as Array<keyof NativeAuthConfigUpdate>).some(
-			key => currentNative[key] !== changes[key],
-		);
-		if (!hasChanges) {
-			return;
-		}
-
-		const nextNative: Record<string, unknown> = { ...currentNative };
-		for (const [key, value] of Object.entries(changes)) {
-			// oauthTokenJson is declared in io-package `encryptedNative`, so js-controller
-			// auto-decrypts it into this.config on the next start. Anything stored there
-			// must therefore be encrypted — writing plaintext would be "decrypted" into
-			// garbage after the token-write restart, breaking every later cloud request
-			// with "OAuth token JSON is invalid". Encrypt on write; keep the plaintext in
-			// this.config so the current session keeps working.
-			nextNative[key] =
-				ENCRYPTED_NATIVE_KEYS.has(key) && typeof value === 'string' && value !== ''
-					? this.encrypt(value)
-					: value;
-		}
-
-		adapterObject.native = nextNative;
-		await this.setForeignObjectAsync(adapterObjectId, adapterObject);
-		Object.assign(this.config, changes);
 	}
 
 	/**
