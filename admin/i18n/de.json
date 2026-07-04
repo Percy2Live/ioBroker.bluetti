@@ -5,9 +5,9 @@
 	"authHeader": "BLUETTI-Authentifizierung",
 	"authStatus": "Authentifizierungsstatus",
 	"oauthClientId": "OAuth Client-ID",
-	"oauthClientIdHelp": "BLUETTI OAuth Client-ID. Vor der Authentifizierung in der Adapterkonfiguration speichern.",
+	"oauthClientIdHelp": "Optional. Leer lassen, um die Standard-Client-ID von BLUETTI zu verwenden. Nur setzen, um die eingebauten Credentials zu überschreiben.",
 	"oauthClientSecret": "OAuth Client-Secret",
-	"oauthClientSecretHelp": "BLUETTI OAuth Client-Secret. Wird von ioBroker verschlüsselt/geschützt gespeichert.",
+	"oauthClientSecretHelp": "Optional. Leer lassen, um das Standard-Client-Secret von BLUETTI zu verwenden. Wird bei Angabe von ioBroker verschlüsselt/geschützt gespeichert.",
 	"authenticateWithBluetti": "Mit BLUETTI authentifizieren",
 	"deviceSelection": "BLUETTI-Gerät",
 	"deviceSelectionHelp": "Gerät für die Abfrage auswählen. Erfordert vorherige Authentifizierung."
