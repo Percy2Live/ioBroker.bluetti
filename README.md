@@ -13,9 +13,19 @@ Read-only ioBroker adapter project for BLUETTI power-station telemetry, starting
 
 ## Status
 
-Early scaffold / implementation repository.
+Implementation repository, not published to the ioBroker repositories yet.
 
-The TypeScript ioBroker adapter scaffold exists. No adapter package is published yet, and real Elite 30 V2 payload values still need validation with sanitized account/device responses before user-facing telemetry states are implemented.
+The BLUETTI cloud login (OAuth), device discovery/selection, and read-only telemetry polling are implemented and have been verified end-to-end against a live BLUETTI account (Elite 30 V2) on js-controller 7.0.7. No npm package is published yet; richer Elite 30 V2 telemetry still needs validation against more sanitized real-world payloads.
+
+## Setup
+
+1. Install the adapter and create a `bluetti.0` instance.
+2. Open the instance configuration in ioBroker Admin.
+3. Click **Authenticate with BLUETTI** and complete the BLUETTI login in the browser window. Leave the *OAuth client ID* and *OAuth client secret* fields **empty** — the adapter ships the credentials used by the official BLUETTI Home Assistant integration, so you do not need to provide your own. (The fields exist only as an optional override.)
+4. After a successful login, open the device selector and pick your BLUETTI device.
+5. Save. Polling starts automatically at the configured interval and `info.connection` turns true once a poll succeeds.
+
+The OAuth token is stored encrypted in the adapter's `auth.tokenJson` state and refreshed automatically; you do not need to re-authenticate on every restart.
 
 ## Goals
 
@@ -65,7 +75,7 @@ The adapter was scaffolded with `@iobroker/create-adapter` as a TypeScript class
 ## Architecture notes
 
 - [BLUETTI Home Assistant API notes](docs/research/bluetti-ha-api-notes.md) records the source-backed upstream OAuth, token, device, and telemetry findings.
-- [BLUETTI auth, token and device selection flow](docs/auth-flow.md) tracks the planned ioBroker OAuth/token/device-selection architecture for issue #15 and the open implementation questions before the adapter should expose a user-facing login flow.
+- [BLUETTI auth, token and device selection flow](docs/auth-flow.md) documents the OAuth/token/device-selection architecture. It began as the issue #15 design plan; the implementation status and the deviations from the original plan (shipped default credentials, token stored in an encrypted state instead of native config) are recorded at the top of that document.
 
 | Script | Purpose |
 |---|---|
