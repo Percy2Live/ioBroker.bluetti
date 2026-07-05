@@ -4,7 +4,7 @@
 
 # ioBroker.bluetti
 
-**Read-only ioBroker adapter for BLUETTI power stations — battery, solar, grid and load telemetry from the BLUETTI cloud.**
+**Read-only ioBroker adapter for [BLUETTI](https://www.bluettipower.com) power stations — battery, solar, grid and load telemetry from the BLUETTI cloud.**
 
 [![NPM version](https://img.shields.io/npm/v/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
 [![Downloads](https://img.shields.io/npm/dm/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
