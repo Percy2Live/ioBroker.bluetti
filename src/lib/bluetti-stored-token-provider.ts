@@ -58,10 +58,10 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 	private lastRefreshFailureAt?: number;
 
 	public constructor(options: BluettiStoredTokenProviderOptions) {
-		this.token = parseStoredToken(options.oauthTokenJson);
+		this.now = options.now ?? Date.now;
+		this.token = parseStoredToken(options.oauthTokenJson, this.now);
 		this.refreshTokenCallback = options.refreshToken;
 		this.persistTokenCallback = options.persistToken;
-		this.now = options.now ?? Date.now;
 		this.expiryBufferMs = options.expiryBufferMs ?? DEFAULT_EXPIRY_BUFFER_MS;
 		this.refreshRetryDelayMs = options.refreshRetryDelayMs ?? DEFAULT_REFRESH_RETRY_DELAY_MS;
 	}
@@ -80,9 +80,14 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 		this.assertRefreshAllowed(currentToken);
 
 		try {
+			// Normalize the refresh response first so a fresh created_at is stamped when
+			// BLUETTI returns only a relative expires_in. Merging afterwards lets that fresh
+			// timestamp override the previous token's stale created_at, while still preserving
+			// the previous refresh token if the refresh response omits one.
+			const refreshResult = normalizeToken(await this.refreshTokenCallback(currentToken), this.now);
 			const refreshedToken = normalizeToken({
 				...currentToken,
-				...(await this.refreshTokenCallback(currentToken)),
+				...refreshResult,
 			});
 
 			this.token = refreshedToken;
@@ -152,13 +157,13 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 	}
 }
 
-export function parseStoredToken(oauthTokenJson?: string | null): BluettiOAuthToken | undefined {
+export function parseStoredToken(oauthTokenJson?: string | null, now?: () => number): BluettiOAuthToken | undefined {
 	if (!oauthTokenJson) {
 		return undefined;
 	}
 
 	try {
-		return normalizeToken(JSON.parse(oauthTokenJson));
+		return normalizeToken(JSON.parse(oauthTokenJson), now);
 	} catch (error) {
 		if (error instanceof BluettiStoredTokenProviderError) {
 			throw error;
@@ -176,7 +181,7 @@ export function stringifyToken(token: BluettiOAuthToken): string {
 	return JSON.stringify(normalizeToken(token));
 }
 
-function normalizeToken(value: unknown): BluettiOAuthToken {
+function normalizeToken(value: unknown, now?: () => number): BluettiOAuthToken {
 	if (!isObject(value) || typeof value.access_token !== 'string' || !value.access_token) {
 		throw new BluettiStoredTokenProviderError('invalid_token_shape', 'BLUETTI OAuth token is missing access_token');
 	}
@@ -200,6 +205,22 @@ function normalizeToken(value: unknown): BluettiOAuthToken {
 
 	if (typeof value.created_at === 'number') {
 		token.created_at = value.created_at;
+	}
+
+	// BLUETTI's /oauth2/token response carries only a relative lifetime (expires_in),
+	// with no created_at/expires_at. Without an issue timestamp getExpiresAtMs() cannot
+	// compute an expiry, so isNearExpiry() defaults to true and forces a refresh on every
+	// poll (#46). Stamp the receipt time as created_at (epoch seconds, matching
+	// BluettiOAuthTokenClient) so the lifetime becomes computable. Only done when a clock
+	// is supplied (token load/receipt), and never over an explicit created_at/expires_at,
+	// which keeps stringifyToken serialization idempotent.
+	if (
+		now &&
+		token.created_at === undefined &&
+		token.expires_at === undefined &&
+		typeof token.expires_in === 'number'
+	) {
+		token.created_at = Math.floor(now() / 1000);
 	}
 
 	return token;

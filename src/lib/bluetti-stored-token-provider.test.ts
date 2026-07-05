@@ -86,6 +86,60 @@ describe('BluettiStoredTokenProvider', () => {
 		expect(persistedTokenRefreshToken).to.equal('kept-refresh-token-secret');
 	});
 
+	it('reuses a token that carries only expires_in and refreshes only near real expiry (#46)', async () => {
+		let now = 1_000_000; // ms; created_at is stamped at load as floor(now / 1000) = 1000 s
+		let refreshCalls = 0;
+		const persisted: string[] = [];
+		const provider = new BluettiStoredTokenProvider({
+			// Shape of the live BLUETTI token: no created_at / expires_at, only expires_in.
+			oauthTokenJson: JSON.stringify({
+				access_token: 'expires-in-only-access-token-secret',
+				refresh_token: 'expires-in-only-refresh-token-secret',
+				token_type: 'bearer',
+				expires_in: 3_600,
+			}),
+			now: () => now,
+			refreshToken: () => {
+				refreshCalls++;
+				// BLUETTI's refresh response has the same shape: relative lifetime, no timestamp.
+				return Promise.resolve({
+					access_token: 'refreshed-access-token-secret',
+					refresh_token: 'refreshed-refresh-token-secret',
+					token_type: 'bearer',
+					expires_in: 3_600,
+				});
+			},
+			persistToken: (_token, oauthTokenJson) => {
+				persisted.push(oauthTokenJson);
+				return Promise.resolve();
+			},
+		});
+
+		// Expiry is computable from the stamped created_at (1000 s) + expires_in: 4_600_000 ms.
+		expect(provider.isTokenNearExpiry()).to.equal(false);
+
+		// Several polls well before expiry reuse the token without a single refresh.
+		for (let poll = 0; poll < 5; poll++) {
+			now += 60_000;
+			expect(await provider.getAccessToken()).to.equal('expires-in-only-access-token-secret');
+		}
+		expect(refreshCalls).to.equal(0);
+		expect(persisted).to.have.length(0);
+
+		// Inside the expiry buffer (10 s before real expiry) exactly one refresh fires.
+		now = 4_600_000 - 10_000;
+		expect(await provider.getAccessToken()).to.equal('refreshed-access-token-secret');
+		expect(refreshCalls).to.equal(1);
+		expect(persisted).to.have.length(1);
+		// The refreshed token gets a fresh created_at too, so it is not treated as stale.
+		expect(JSON.parse(persisted[0]).created_at).to.equal(Math.floor((4_600_000 - 10_000) / 1000));
+
+		// A poll shortly after refresh reuses the new token instead of refreshing again.
+		now += 60_000;
+		expect(await provider.getAccessToken()).to.equal('refreshed-access-token-secret');
+		expect(refreshCalls).to.equal(1);
+	});
+
 	it('refreshes after the cloud provider marks the token expired', async () => {
 		let refreshCalls = 0;
 		const provider = new BluettiStoredTokenProvider({
