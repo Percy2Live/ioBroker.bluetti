@@ -59,7 +59,7 @@ The upstream README describes a Home Assistant configuration flow where the user
 
 The integration uses Home Assistant's OAuth/application-credentials framework:
 
-- `config_flow.py:15-19` imports a default OAuth client credential. Keep those credential values out of adapter source; users configure `oauthClientId`/`oauthClientSecret` through ioBroker native config.
+- `config_flow.py:15-19` imports a default OAuth client credential. The adapter uses the same built-in defaults for Admin login and still allows expert overrides via direct native-object edits.
 - `application_credentials.py:13-16` constructs the authorization and token URLs from the configured SSO base URL.
 - `oauth.py:24-38` implements an `OAuth2FlowHandler`; after OAuth callback it continues to device selection.
 - `oauth.py:93-102` uses `self._oauth_data['token']['access_token']` to create a `ProductClient` and call `get_user_products()`.

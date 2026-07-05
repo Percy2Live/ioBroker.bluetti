@@ -4,10 +4,6 @@
 	"pollIntervalHelp": "Mindestabstand zwischen BLUETTI-Telemetrieabfragen. Die erste Implementierung bleibt read-only.",
 	"authHeader": "BLUETTI-Authentifizierung",
 	"authStatus": "Authentifizierungsstatus",
-	"oauthClientId": "OAuth Client-ID",
-	"oauthClientIdHelp": "Optional. Leer lassen, um die Standard-Client-ID von BLUETTI zu verwenden. Nur setzen, um die eingebauten Credentials zu überschreiben.",
-	"oauthClientSecret": "OAuth Client-Secret",
-	"oauthClientSecretHelp": "Optional. Leer lassen, um das Standard-Client-Secret von BLUETTI zu verwenden. Wird bei Angabe von ioBroker verschlüsselt/geschützt gespeichert.",
 	"authenticateWithBluetti": "Mit BLUETTI authentifizieren",
 	"deviceSelection": "BLUETTI-Gerät",
 	"deviceSelectionHelp": "Gerät für die Abfrage auswählen. Erfordert vorherige Authentifizierung."
