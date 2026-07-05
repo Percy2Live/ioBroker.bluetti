@@ -68,11 +68,14 @@ All states are **read-only**.
 | `device.model` | `string` | Device model |
 | `device.name` | `string` | Device name |
 | `device.online` | `boolean` | Whether the device is online in the BLUETTI cloud |
+| `device.workMode` | `string` | Current working mode as reported by the device (raw enum, e.g. `workmode_3`) |
 
 ### `battery`
 | State | Type | Description |
 |---|---|---|
 | `battery.soc` | `number %` | Battery state of charge |
+| `battery.dischargeRemaining` | `number min` | Estimated minutes until empty at the current load |
+| `battery.chargeRemaining` | `number min` | Estimated minutes until fully charged; 0 when not charging |
 
 ### `power`
 | State | Type | Description |
@@ -81,6 +84,10 @@ All states are **read-only**.
 | `power.gridInput` | `number W` | Grid input power |
 | `power.acOutput` | `number W` | AC output (load) power |
 | `power.dcOutput` | `number W` | DC output (load) power |
+| `power.acOutputActive` | `boolean` | Whether the AC output is currently switched on |
+| `power.dcOutputActive` | `boolean` | Whether the DC output is currently switched on |
+| `power.acEco` | `boolean` | Whether AC ECO power-saving mode is enabled |
+| `power.dcEco` | `boolean` | Whether DC ECO power-saving mode is enabled |
 
 ### `health`
 | State | Type | Description |
@@ -134,6 +141,7 @@ Architecture and research notes:
 ### 0.0.1
 
 - Initial release: BLUETTI cloud OAuth login, device discovery/selection, and read-only telemetry polling for the Elite 30 V2.
+- Added verified Elite 30 V2 telemetry from a real `deviceStates` payload: battery discharge/charge time remaining, AC/DC output and ECO status, and working mode.
 
 Older entries are kept in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 

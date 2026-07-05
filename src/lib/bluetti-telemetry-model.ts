@@ -9,6 +9,7 @@ export interface TelemetryStateCommon {
 	role: string;
 	read: true;
 	write: false;
+	desc?: string;
 	unit?: string;
 	min?: number;
 	max?: number;
@@ -38,9 +39,9 @@ export const DEVICE_STATES: readonly TelemetryStateDef[] = [
 	},
 ];
 
-// Battery/power telemetry (Elite 30 V2 feature matrix). Live values are populated
-// from TELEMETRY_FIELD_MAP; its fnCodes are upstream candidates pending real-payload
-// verification (#9), so the objects are stable even if a code needs correcting.
+// Battery/power telemetry. Live values are populated from TELEMETRY_FIELD_MAP.
+// The fnCodes are verified against a real Elite 30 V2 `deviceStates` payload
+// (see docs/research/bluetti-ha-api-notes.md, "Verified Elite 30 V2 payload").
 export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 	{
 		id: 'battery.soc',
@@ -53,6 +54,33 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 			max: 100,
 			read: true,
 			write: false,
+			desc: 'Battery charge level reported by the Elite 30 V2 (fnCode SOC).',
+		},
+	},
+	{
+		id: 'battery.dischargeRemaining',
+		common: {
+			name: 'Battery discharge time remaining',
+			type: 'number',
+			role: 'value.interval',
+			unit: 'min',
+			min: 0,
+			read: true,
+			write: false,
+			desc: 'Estimated minutes until the battery is empty at the current load (fnCode DsgFullTime).',
+		},
+	},
+	{
+		id: 'battery.chargeRemaining',
+		common: {
+			name: 'Battery full-charge time remaining',
+			type: 'number',
+			role: 'value.interval',
+			unit: 'min',
+			min: 0,
+			read: true,
+			write: false,
+			desc: 'Estimated minutes until the battery is fully charged; 0 when not charging (fnCode ChgFullTime).',
 		},
 	},
 ];
@@ -60,19 +88,111 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 export const POWER_STATES: readonly TelemetryStateDef[] = [
 	{
 		id: 'power.pvInput',
-		common: { name: 'PV input power', type: 'number', role: 'value.power', unit: 'W', read: true, write: false },
+		common: {
+			name: 'PV input power',
+			type: 'number',
+			role: 'value.power',
+			unit: 'W',
+			read: true,
+			write: false,
+			desc: 'Photovoltaic input power (fnCode PVAllTotalPower).',
+		},
 	},
 	{
 		id: 'power.gridInput',
-		common: { name: 'Grid input power', type: 'number', role: 'value.power', unit: 'W', read: true, write: false },
+		common: {
+			name: 'Grid input power',
+			type: 'number',
+			role: 'value.power',
+			unit: 'W',
+			read: true,
+			write: false,
+			desc: 'Grid/AC charging input power (fnCode GridAllTotalPower).',
+		},
 	},
 	{
 		id: 'power.acOutput',
-		common: { name: 'AC output power', type: 'number', role: 'value.power', unit: 'W', read: true, write: false },
+		common: {
+			name: 'AC output power',
+			type: 'number',
+			role: 'value.power',
+			unit: 'W',
+			read: true,
+			write: false,
+			desc: 'AC load output power (fnCode ACLoadAllTotalPower).',
+		},
 	},
 	{
 		id: 'power.dcOutput',
-		common: { name: 'DC output power', type: 'number', role: 'value.power', unit: 'W', read: true, write: false },
+		common: {
+			name: 'DC output power',
+			type: 'number',
+			role: 'value.power',
+			unit: 'W',
+			read: true,
+			write: false,
+			desc: 'DC load output power (fnCode DCLoadAllTotalPower).',
+		},
+	},
+	{
+		id: 'power.acOutputActive',
+		common: {
+			name: 'AC output active',
+			type: 'boolean',
+			role: 'indicator',
+			read: true,
+			write: false,
+			desc: 'Whether the AC output is currently switched on (fnCode SetCtrlAc, read-only status).',
+		},
+	},
+	{
+		id: 'power.dcOutputActive',
+		common: {
+			name: 'DC output active',
+			type: 'boolean',
+			role: 'indicator',
+			read: true,
+			write: false,
+			desc: 'Whether the DC output is currently switched on (fnCode SetCtrlDc, read-only status).',
+		},
+	},
+	{
+		id: 'power.acEco',
+		common: {
+			name: 'AC ECO mode active',
+			type: 'boolean',
+			role: 'indicator',
+			read: true,
+			write: false,
+			desc: 'Whether AC ECO power-saving mode is enabled (fnCode SetACECO, read-only status).',
+		},
+	},
+	{
+		id: 'power.dcEco',
+		common: {
+			name: 'DC ECO mode active',
+			type: 'boolean',
+			role: 'indicator',
+			read: true,
+			write: false,
+			desc: 'Whether DC ECO power-saving mode is enabled (fnCode SetDCECO, read-only status).',
+		},
+	},
+];
+
+// Operational mode reported by the device. The raw enum value (e.g. "workmode_3")
+// is exposed as-is because the full label mapping is not payload-verified.
+export const MODE_STATES: readonly TelemetryStateDef[] = [
+	{
+		id: 'device.workMode',
+		common: {
+			name: 'Working mode',
+			type: 'string',
+			role: 'text',
+			read: true,
+			write: false,
+			desc: 'Current working mode as reported by the device (fnCode SetCtrlWorkMode).',
+		},
 	},
 ];
 
@@ -108,22 +228,36 @@ export const TELEMETRY_STATES: readonly TelemetryStateDef[] = [
 	...DEVICE_STATES,
 	...BATTERY_STATES,
 	...POWER_STATES,
+	...MODE_STATES,
 	...HEALTH_STATES,
 ];
 
+// Lookup of the declared type per state id, used to convert raw `fnValue`s
+// according to the target state's type (single source of truth for value shape).
+const STATE_TYPE_BY_ID: Readonly<Record<string, TelemetryStateCommon['type']>> = Object.fromEntries(
+	TELEMETRY_STATES.map(state => [state.id, state.common.type]),
+);
+
 // Maps BLUETTI stateList `fnCode` values to state ids.
 //
-// These are CANDIDATE codes from the upstream Home Assistant integration's
-// `icon_config.py` (see docs/research/bluetti-ha-api-notes.md), NOT yet confirmed
-// against a real EL30V2 `stateList` payload — the exact EL30V2 fnCode set is still
-// open (#9). Unknown codes are ignored by the mapper, so a wrong candidate yields
-// no value rather than bad data. Finalize once a real payload is available.
+// These fnCodes are VERIFIED against a real Elite 30 V2 `deviceStates` payload
+// (captured 2026-07-05, see docs/research/bluetti-ha-api-notes.md, "Verified
+// Elite 30 V2 payload"). Unknown codes are ignored by the mapper, and values are
+// converted to the target state's declared type, so a non-conforming value yields
+// no update rather than bad data.
 export const TELEMETRY_FIELD_MAP: Readonly<Record<string, string>> = {
 	SOC: 'battery.soc',
+	DsgFullTime: 'battery.dischargeRemaining',
+	ChgFullTime: 'battery.chargeRemaining',
 	PVAllTotalPower: 'power.pvInput',
 	GridAllTotalPower: 'power.gridInput',
 	ACLoadAllTotalPower: 'power.acOutput',
 	DCLoadAllTotalPower: 'power.dcOutput',
+	SetCtrlAc: 'power.acOutputActive',
+	SetCtrlDc: 'power.dcOutputActive',
+	SetACECO: 'power.acEco',
+	SetDCECO: 'power.dcEco',
+	SetCtrlWorkMode: 'device.workMode',
 };
 
 export function toTelemetryNumber(raw: unknown): number | null {
@@ -133,6 +267,46 @@ export function toTelemetryNumber(raw: unknown): number | null {
 	if (typeof raw === 'string' && raw.trim() !== '') {
 		const parsed = Number(raw);
 		return Number.isFinite(parsed) ? parsed : null;
+	}
+	return null;
+}
+
+// BLUETTI switch/eco states arrive as "1"/"0" strings; accept the common truthy
+// spellings and reject anything ambiguous (null → no update).
+export function toTelemetryBoolean(raw: unknown): boolean | null {
+	if (typeof raw === 'boolean') {
+		return raw;
+	}
+	if (typeof raw === 'number') {
+		if (raw === 1) {
+			return true;
+		}
+		if (raw === 0) {
+			return false;
+		}
+		return null;
+	}
+	if (typeof raw === 'string') {
+		const normalized = raw.trim().toLowerCase();
+		if (normalized === '1' || normalized === 'true' || normalized === 'on') {
+			return true;
+		}
+		if (normalized === '0' || normalized === 'false' || normalized === 'off') {
+			return false;
+		}
+	}
+	return null;
+}
+
+// Enum/mode strings (e.g. "workmode_3") are passed through verbatim; empty values
+// are skipped so a blank payload does not clobber the last-known mode.
+export function toTelemetryString(raw: unknown): string | null {
+	if (typeof raw === 'string') {
+		const trimmed = raw.trim();
+		return trimmed === '' ? null : trimmed;
+	}
+	if (typeof raw === 'number' && Number.isFinite(raw)) {
+		return String(raw);
 	}
 	return null;
 }
@@ -161,8 +335,9 @@ export function mapDeviceMetadata(product: BluettiUserProduct): Record<string, T
 	return values;
 }
 
-// Live telemetry from the stateList using the (currently empty) field map. Only
-// numeric values for mapped fnCodes are emitted; unknown fields are ignored.
+// Live telemetry from the stateList using the field map. Each mapped fnValue is
+// converted to its target state's declared type (number/boolean/string); unknown
+// fnCodes and values that fail conversion are ignored rather than written.
 export function mapTelemetryFields(
 	product: BluettiUserProduct,
 	fieldMap: Readonly<Record<string, string>> = TELEMETRY_FIELD_MAP,
@@ -173,12 +348,24 @@ export function mapTelemetryFields(
 		if (stateId === undefined) {
 			continue;
 		}
-		const numeric = toTelemetryNumber(entry.fnValue);
-		if (numeric !== null) {
-			values[stateId] = numeric;
+		const converted = convertTelemetryValue(STATE_TYPE_BY_ID[stateId], entry.fnValue);
+		if (converted !== null) {
+			values[stateId] = converted;
 		}
 	}
 	return values;
+}
+
+// Converts a raw fnValue to the declared state type. Unknown ids default to number
+// so injected field maps that reference undeclared states keep the legacy behavior.
+function convertTelemetryValue(type: TelemetryStateCommon['type'] | undefined, raw: unknown): TelemetryValue | null {
+	if (type === 'boolean') {
+		return toTelemetryBoolean(raw);
+	}
+	if (type === 'string') {
+		return toTelemetryString(raw);
+	}
+	return toTelemetryNumber(raw);
 }
 
 // Health/staleness snapshot from the polling policy.
