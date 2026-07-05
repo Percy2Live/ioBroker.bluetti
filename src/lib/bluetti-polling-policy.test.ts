@@ -94,4 +94,93 @@ describe('BluettiPollingPolicy', () => {
 		expect(isBackoffErrorKind('invalid_response')).to.equal(true);
 		expect(isBackoffErrorKind('auth')).to.equal(false);
 	});
+
+	describe('UPS/outage health model', () => {
+		it('reports fresh, non-stale, no-reason health after a successful poll', () => {
+			const clock = 1_000;
+			const policy = new BluettiPollingPolicy({ stalenessThresholdMs: 300_000, now: () => clock });
+
+			policy.recordSuccess();
+			const health = policy.health();
+			expect(health.telemetryFresh).to.equal(true);
+			expect(health.socStale).to.equal(false);
+			expect(health.outageReason).to.equal('');
+		});
+
+		it('flags SOC as stale once the staleness threshold is exceeded without success', () => {
+			let clock = 1_000;
+			const policy = new BluettiPollingPolicy({ stalenessThresholdMs: 300_000, now: () => clock });
+			policy.recordSuccess();
+
+			// Just at the threshold the telemetry is still considered fresh.
+			clock = 1_000 + 300_000;
+			expect(policy.health().telemetryFresh).to.equal(true);
+
+			// One millisecond past the threshold flips staleness.
+			clock = 1_000 + 300_001;
+			const health = policy.health();
+			expect(health.telemetryFresh).to.equal(false);
+			expect(health.socStale).to.equal(true);
+			expect(health.outageReason).to.equal('stale_telemetry');
+		});
+
+		it('treats a never-polled policy as stale telemetry, not an outage', () => {
+			const policy = new BluettiPollingPolicy();
+			const health = policy.health();
+			expect(health.telemetryFresh).to.equal(false);
+			expect(health.socStale).to.equal(true);
+			expect(health.outageSuspected).to.equal(false);
+			expect(health.outageReason).to.equal('stale_telemetry');
+		});
+
+		it('reports consecutive_failures once a cloud-timeout streak crosses the threshold', () => {
+			const policy = new BluettiPollingPolicy({ outageThreshold: 3 });
+
+			policy.recordFailure('timeout');
+			policy.recordFailure('timeout');
+			expect(policy.health().outageSuspected).to.equal(false);
+			expect(policy.health().outageReason).to.equal('stale_telemetry');
+
+			policy.recordFailure('timeout');
+			const health = policy.health();
+			expect(health.consecutiveFailures).to.equal(3);
+			expect(health.outageSuspected).to.equal(true);
+			expect(health.outageReason).to.equal('consecutive_failures');
+		});
+
+		it('reports auth_failed without outage suspicion and leaves freshness intact', () => {
+			let clock = 1_000;
+			const policy = new BluettiPollingPolicy({ stalenessThresholdMs: 300_000, now: () => clock });
+			policy.recordSuccess();
+
+			clock = 2_000;
+			policy.recordFailure('auth');
+			const health = policy.health();
+			expect(health.authFailed).to.equal(true);
+			expect(health.outageSuspected).to.equal(false);
+			expect(health.outageReason).to.equal('auth_failed');
+			// Auth failure does not mean the last-known telemetry aged out.
+			expect(health.telemetryFresh).to.equal(true);
+			expect(health.socStale).to.equal(false);
+		});
+
+		it('resets every health field after a success following a failure streak', () => {
+			let clock = 1_000;
+			const policy = new BluettiPollingPolicy({ outageThreshold: 3, now: () => clock });
+			policy.recordFailure('timeout');
+			policy.recordFailure('timeout');
+			policy.recordFailure('timeout');
+			expect(policy.health().outageReason).to.equal('consecutive_failures');
+
+			clock = 2_000;
+			policy.recordSuccess();
+			const health = policy.health();
+			expect(health.consecutiveFailures).to.equal(0);
+			expect(health.outageSuspected).to.equal(false);
+			expect(health.authFailed).to.equal(false);
+			expect(health.telemetryFresh).to.equal(true);
+			expect(health.socStale).to.equal(false);
+			expect(health.outageReason).to.equal('');
+		});
+	});
 });

@@ -7,6 +7,12 @@ export const DEFAULT_BASE_POLL_INTERVAL_MS = 30_000;
 export const DEFAULT_MAX_BACKOFF_MS = 15 * 60_000;
 export const DEFAULT_BACKOFF_FACTOR = 2;
 export const DEFAULT_OUTAGE_THRESHOLD = 3;
+export const DEFAULT_STALENESS_THRESHOLD_MS = 5 * 60_000;
+
+// Human-readable reasons exposed via BluettiPollingHealth.outageReason. Auth/config
+// problems are reported distinctly from real outage signals so downstream consumers
+// never confuse a credential error with an unreachable cloud/device.
+export type BluettiOutageReason = '' | 'auth_failed' | 'consecutive_failures' | 'stale_telemetry';
 
 // Error kinds that signal a possibly unreachable/degraded BLUETTI cloud and should
 // trigger backoff. 'auth' is deliberately excluded: a 401/403 means the cloud IS
@@ -34,6 +40,8 @@ export interface BluettiPollingPolicyOptions {
 	backoffFactor?: number;
 	/** Consecutive backoff-class failures before an outage is suspected. */
 	outageThreshold?: number;
+	/** Max age of the last successful poll before telemetry is considered stale. */
+	stalenessThresholdMs?: number;
 	/** Injectable clock for deterministic tests. */
 	now?: () => number;
 }
@@ -43,6 +51,9 @@ export interface BluettiPollingHealth {
 	consecutiveFailures: number;
 	outageSuspected: boolean;
 	authFailed: boolean;
+	telemetryFresh: boolean;
+	socStale: boolean;
+	outageReason: BluettiOutageReason;
 	lastErrorKind: BluettiCloudErrorKind | null;
 	lastSuccessAt: number | null;
 	lastFailureAt: number | null;
@@ -59,6 +70,7 @@ export class BluettiPollingPolicy {
 	private readonly maxBackoffMs: number;
 	private readonly backoffFactor: number;
 	private readonly outageThreshold: number;
+	private readonly stalenessThresholdMs: number;
 	private readonly now: () => number;
 
 	private consecutiveFailures = 0;
@@ -77,6 +89,7 @@ export class BluettiPollingPolicy {
 		this.maxBackoffMs = Math.max(options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS, this.basePollIntervalMs);
 		this.backoffFactor = Math.max(1, options.backoffFactor ?? DEFAULT_BACKOFF_FACTOR);
 		this.outageThreshold = Math.max(1, options.outageThreshold ?? DEFAULT_OUTAGE_THRESHOLD);
+		this.stalenessThresholdMs = Math.max(0, options.stalenessThresholdMs ?? DEFAULT_STALENESS_THRESHOLD_MS);
 		this.now = options.now ?? ((): number => Date.now());
 	}
 
@@ -118,13 +131,43 @@ export class BluettiPollingPolicy {
 		return this.consecutiveFailures >= this.outageThreshold;
 	}
 
+	/** True while the last successful poll is recent enough to trust the telemetry. */
+	public isTelemetryFresh(): boolean {
+		if (this.lastSuccessAt === null) {
+			return false;
+		}
+		return this.now() - this.lastSuccessAt <= this.stalenessThresholdMs;
+	}
+
+	/**
+	 * Human-readable reason for a degraded health state. Auth/config errors are
+	 * reported as 'auth_failed' and NEVER as an outage; real outage signals map to
+	 * 'consecutive_failures', and merely aged telemetry maps to 'stale_telemetry'.
+	 */
+	public outageReason(): BluettiOutageReason {
+		if (this.authFailed) {
+			return 'auth_failed';
+		}
+		if (this.isOutageSuspected()) {
+			return 'consecutive_failures';
+		}
+		if (!this.isTelemetryFresh()) {
+			return 'stale_telemetry';
+		}
+		return '';
+	}
+
 	/** Snapshot for a health/outage model. */
 	public health(): BluettiPollingHealth {
+		const telemetryFresh = this.isTelemetryFresh();
 		return {
 			nextDelayMs: this.nextDelayMs(),
 			consecutiveFailures: this.consecutiveFailures,
 			outageSuspected: this.isOutageSuspected(),
 			authFailed: this.authFailed,
+			telemetryFresh,
+			socStale: !telemetryFresh,
+			outageReason: this.outageReason(),
 			lastErrorKind: this.lastErrorKind,
 			lastSuccessAt: this.lastSuccessAt,
 			lastFailureAt: this.lastFailureAt,

@@ -222,6 +222,36 @@ export const HEALTH_STATES: readonly TelemetryStateDef[] = [
 			write: false,
 		},
 	},
+	{
+		id: 'health.telemetryFresh',
+		common: {
+			name: 'Telemetry fresh',
+			type: 'boolean',
+			role: 'indicator.maintenance',
+			read: true,
+			write: false,
+		},
+	},
+	{
+		id: 'health.socStale',
+		common: {
+			name: 'State of charge stale',
+			type: 'boolean',
+			role: 'indicator.maintenance',
+			read: true,
+			write: false,
+		},
+	},
+	{
+		id: 'health.outageReason',
+		common: {
+			name: 'Outage reason',
+			type: 'string',
+			role: 'text',
+			read: true,
+			write: false,
+		},
+	},
 ];
 
 export const TELEMETRY_STATES: readonly TelemetryStateDef[] = [
@@ -374,5 +404,8 @@ export function mapHealth(health: BluettiPollingHealth): Record<string, Telemetr
 		'health.outageSuspected': health.outageSuspected,
 		'health.consecutiveFailures': health.consecutiveFailures,
 		'health.authFailed': health.authFailed,
+		'health.telemetryFresh': health.telemetryFresh,
+		'health.socStale': health.socStale,
+		'health.outageReason': health.outageReason,
 	};
 }
