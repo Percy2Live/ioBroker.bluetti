@@ -6,5 +6,5 @@
 	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
-	"deviceSelectionHelp": "Select the device to poll. Requires prior authentication."
+	"deviceSelectionHelp": "Seleziona il dispositivo da interrogare. Richiede un’autenticazione preventiva."
 }
