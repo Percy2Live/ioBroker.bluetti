@@ -154,9 +154,7 @@
 	],
 	"protectedNative": [
 		"oauthClientSecret",
-		"oauthTokenJson",
-		"selectedDeviceSerials",
-		"selectedDevicesJson"
+		"oauthTokenJson"
 	],
 	"encryptedNative": [
 		"oauthClientSecret",

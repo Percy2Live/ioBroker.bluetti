@@ -134,8 +134,7 @@ Proposed native fields:
 |---|---:|---|
 | `oauthTokenJson` | yes | JSON string containing token response: access token, refresh token, created/expires fields |
 | `oauthLastRefresh` | no | Timestamp of the last refresh attempt/success for throttling |
-| `selectedDeviceSerials` | partly | Selected serials used for polling and bindDevices |
-| `selectedDevicesJson` | partly | Redacted/minimal metadata for Admin display: serial, model, name, online flag |
+| `deviceSerial` | partly | Serial of the selected device used for polling and bindDevices |
 | `authStatus` | no | Last high-level auth state for Admin display |
 
 `oauthTokenJson` must be in `encryptedNative` and `protectedNative`.
@@ -171,17 +170,16 @@ Flow:
 
 1. Adapter calls `getUserProducts()` using the fresh token.
 2. Admin config obtains the device list through a `sendTo`/`selectSendTo` control, or the adapter stores the discovered list for display after OAuth callback.
-3. User selects one or more serials.
-4. Adapter calls `POST /api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": selectedSerials }`.
-5. Adapter stores selected serials and minimal metadata.
-6. Polling only uses selected serials.
+3. User selects a single serial.
+4. Adapter calls `POST /api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": [deviceSerial] }`.
+5. Adapter stores the selected serial.
+6. Polling only uses the selected serial.
 
 Representation:
 
 | Native/config value | Use |
 |---|---|
-| `selectedDeviceSerials: string[]` | Polling target list |
-| `selectedDevicesJson` | Admin display/cache, redacted in logs |
+| `deviceSerial: string` | Polling target |
 | `bindDevices` result | Used only to confirm configuration; do not expose control states |
 
 The first implementation should keep this read-only. `fulfillment`/control endpoints remain out of scope.
