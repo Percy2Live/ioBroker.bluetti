@@ -6,6 +6,11 @@ import * as utils from '@iobroker/adapter-core';
 import { BluettiCloudProvider, BluettiCloudProviderError, type BluettiUserProduct } from './lib/bluetti-cloud-provider';
 import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti-device-selection';
 import {
+	UnknownTelemetryKeyTracker,
+	buildDiagnosticsSnapshot,
+	type BluettiDiagnosticsSnapshot,
+} from './lib/bluetti-diagnostics';
+import {
 	BluettiOAuthFlow,
 	BLUETTI_DEFAULT_CLIENT_ID,
 	BLUETTI_DEFAULT_CLIENT_SECRET,
@@ -17,6 +22,7 @@ import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-p
 import { BluettiStoredTokenProvider, stringifyToken } from './lib/bluetti-stored-token-provider';
 import {
 	TELEMETRY_STATES,
+	TELEMETRY_FIELD_MAP,
 	mapDeviceMetadata,
 	mapHealth,
 	mapTelemetryFields,
@@ -42,6 +48,12 @@ class Bluetti extends utils.Adapter {
 	private pollRunner?: BluettiPollRunner<ioBroker.Timeout | undefined>;
 	// Plaintext OAuth token JSON held in memory; persisted (encrypted) to TOKEN_STATE_ID.
 	private oauthTokenJson = '';
+	// In-memory diagnostics state, reset on each adapter restart. The tracker
+	// deduplicates unknown telemetry fnCodes so they are logged once, not per poll.
+	private readonly unknownKeyTracker = new UnknownTelemetryKeyTracker(TELEMETRY_FIELD_MAP);
+	private lastPollingHealth?: BluettiPollingHealth;
+	private lastKnownModel: string | null = null;
+	private lastApiStatus = 'unknown';
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
@@ -148,12 +160,14 @@ class Bluetti extends utils.Adapter {
 			setTimer: (callback, delayMs) => this.setTimeout(callback, delayMs),
 			clearTimer: handle => this.clearTimeout(handle),
 			onSuccess: async () => {
+				this.lastApiStatus = 'ok';
 				await this.setState('info.connection', true, true);
 				await this.setState('status.lastUpdate', new Date().toISOString(), true);
 				await this.setState('status.lastError', '', true);
 				await this.writeHealth(policy.health());
 			},
 			onFailure: async (kind, error) => {
+				this.lastApiStatus = kind;
 				await this.setState('info.connection', false, true);
 				await this.setState('status.lastError', `${kind}: ${extractSafeErrorMessage(error)}`, true);
 				await this.writeHealth(policy.health());
@@ -179,11 +193,62 @@ class Bluetti extends utils.Adapter {
 	}
 
 	private async writeTelemetry(product: BluettiUserProduct): Promise<void> {
+		this.trackDiagnostics(product);
 		await this.writeStateValues({ ...mapDeviceMetadata(product), ...mapTelemetryFields(product) });
 	}
 
+	// Remembers the last-known model for diagnostics and logs any telemetry fnCodes
+	// not yet mapped by the adapter. Unknown keys are deduplicated by the tracker so
+	// each is warned about once, not on every poll cycle.
+	private trackDiagnostics(product: BluettiUserProduct): void {
+		const model = (product.model ?? '').trim();
+		if (model !== '') {
+			this.lastKnownModel = model;
+		}
+
+		const newUnknownKeys = this.unknownKeyTracker.track(product.stateList);
+		if (newUnknownKeys.length > 0) {
+			this.log.warn(
+				`BLUETTI telemetry contains unmapped fnCodes (report to add support): ${newUnknownKeys.join(', ')}`,
+			);
+		}
+	}
+
 	private async writeHealth(health: BluettiPollingHealth): Promise<void> {
+		this.lastPollingHealth = health;
 		await this.writeStateValues(mapHealth(health));
+	}
+
+	// Builds a sanitized diagnostic snapshot safe to attach to a bug report:
+	// credentials, tokens and the full device serial are redacted or truncated.
+	private async buildDiagnostics(): Promise<BluettiDiagnosticsSnapshot> {
+		return buildDiagnosticsSnapshot(
+			{
+				adapterVersion: this.version ?? '',
+				jsControllerVersion: await this.readJsControllerVersion(),
+				model: this.lastKnownModel,
+				deviceSerial: (this.config.deviceSerial ?? '').trim(),
+				lastApiStatus: this.lastApiStatus,
+				lastSuccessAt: this.lastPollingHealth?.lastSuccessAt ?? null,
+				unknownKeys: this.unknownKeyTracker.keys(),
+			},
+			TELEMETRY_FIELD_MAP,
+		);
+	}
+
+	// The js-controller version is stored on the host object; return null if it
+	// cannot be read (e.g. missing host or object), never throwing into the caller.
+	private async readJsControllerVersion(): Promise<string | null> {
+		if (!this.host) {
+			return null;
+		}
+		try {
+			const hostObject = await this.getForeignObjectAsync(`system.host.${this.host}`);
+			const version = hostObject?.common?.installedVersion;
+			return typeof version === 'string' && version !== '' ? version : null;
+		} catch {
+			return null;
+		}
 	}
 
 	private async writeStateValues(values: Record<string, TelemetryValue>): Promise<void> {
@@ -214,6 +279,9 @@ class Bluetti extends utils.Adapter {
 					break;
 				case 'getDevices':
 					this.sendMessageResponse(message, await this.handleGetDevices());
+					break;
+				case 'getDiagnostics':
+					this.sendMessageResponse(message, await this.buildDiagnostics());
 					break;
 				default:
 					this.sendMessageResponse(message, { error: `Unsupported BLUETTI command: ${message.command}` });
