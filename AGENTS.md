@@ -15,6 +15,7 @@ Lokal grün, bevor irgendwas rausgeht — in dieser Reihenfolge:
 npm run check      # tsc --noEmit
 npm run lint       # eslint
 npm run test       # test:ts + test:package (mocha)
+npm run build      # build-adapter ts
 ```
 
 Rot = nicht committen. Fehler an der Wurzel fixen, kein `--no-verify`,
