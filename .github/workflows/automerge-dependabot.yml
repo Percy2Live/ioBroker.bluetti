@@ -1,0 +1,28 @@
+name: Auto-Merge Dependabot
+
+# Enable auto-merge for Dependabot pull requests once the required
+# CI checks (see test-and-release.yml) have passed.
+on:
+  pull_request:
+    branches:
+      - "main"
+
+# Only need write access to enable auto-merge on the PR
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Enable auto-merge; GitHub squash-merges and deletes the branch
+      # automatically once all required status checks succeed.
+      - name: Enable auto-merge
+        run: gh pr merge --auto --squash --delete-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
