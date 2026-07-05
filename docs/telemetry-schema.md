@@ -16,6 +16,11 @@ section "Verified Elite 30 V2 payload").
 | `power.acOutput` | `W` | v0.1 | yes | `ACLoadAllTotalPower` | AC load output power |
 | `power.dcOutput` | `W` | v0.1 | yes | `DCLoadAllTotalPower` | DC load output power |
 | `health.outageSuspected` | — | v0.1 | derived | — | Conservative trigger, not definitive proof |
+| `health.consecutiveFailures` | — | v0.1 | derived | — | Backoff-class failure streak length |
+| `health.authFailed` | — | v0.1 | derived | — | Auth/config problem; cloud reachable, not an outage |
+| `health.telemetryFresh` | — | v0.5 | derived | — | Last successful poll within the staleness window |
+| `health.socStale` | — | v0.5 | derived | — | SOC unrefreshed past the staleness window |
+| `health.outageReason` | — | v0.5 | derived | — | `auth_failed` \| `consecutive_failures` \| `stale_telemetry` \| `''` |
 | `battery.dischargeRemaining` | `min` | v0.3 | yes | `DsgFullTime` | Minutes to empty at current load |
 | `battery.chargeRemaining` | `min` | v0.3 | yes | `ChgFullTime` | Minutes to full; 0 when not charging |
 | `power.acOutputActive` | — | v0.3 | yes | `SetCtrlAc` | AC output on/off, read-only status |

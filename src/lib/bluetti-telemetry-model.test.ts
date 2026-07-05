@@ -52,6 +52,28 @@ describe('bluetti telemetry model', () => {
 			expect(ids).to.include('health.outageSuspected');
 			expect(ids).to.include('health.consecutiveFailures');
 			expect(ids).to.include('health.authFailed');
+			expect(ids).to.include('health.telemetryFresh');
+			expect(ids).to.include('health.socStale');
+			expect(ids).to.include('health.outageReason');
+		});
+
+		it('defines the UPS/outage health states with correct type/role', () => {
+			const byId = new Map(TELEMETRY_STATES.map(s => [s.id, s.common]));
+			const expectations: Record<string, { type: string; role: string }> = {
+				'health.telemetryFresh': { type: 'boolean', role: 'indicator.maintenance' },
+				'health.socStale': { type: 'boolean', role: 'indicator.maintenance' },
+				'health.outageReason': { type: 'string', role: 'text' },
+			};
+			for (const [id, exp] of Object.entries(expectations)) {
+				const common = byId.get(id);
+				if (!common) {
+					throw new Error(`${id} state is not defined`);
+				}
+				expect(common.type, `${id} type`).to.equal(exp.type);
+				expect(common.role, `${id} role`).to.equal(exp.role);
+				expect(common.read).to.equal(true);
+				expect(common.write).to.equal(false);
+			}
 		});
 
 		it('never defines a writable/control state', () => {
@@ -211,6 +233,9 @@ describe('bluetti telemetry model', () => {
 				consecutiveFailures: 2,
 				outageSuspected: false,
 				authFailed: true,
+				telemetryFresh: true,
+				socStale: false,
+				outageReason: 'auth_failed',
 				lastErrorKind: 'timeout',
 				lastSuccessAt: null,
 				lastFailureAt: 123,
@@ -219,6 +244,32 @@ describe('bluetti telemetry model', () => {
 				'health.outageSuspected': false,
 				'health.consecutiveFailures': 2,
 				'health.authFailed': true,
+				'health.telemetryFresh': true,
+				'health.socStale': false,
+				'health.outageReason': 'auth_failed',
+			});
+		});
+
+		it('maps a stale/outage snapshot including the outage reason string', () => {
+			const values = mapHealth({
+				nextDelayMs: 240_000,
+				consecutiveFailures: 3,
+				outageSuspected: true,
+				authFailed: false,
+				telemetryFresh: false,
+				socStale: true,
+				outageReason: 'consecutive_failures',
+				lastErrorKind: 'timeout',
+				lastSuccessAt: 1_000,
+				lastFailureAt: 5_000,
+			});
+			expect(values).to.deep.equal({
+				'health.outageSuspected': true,
+				'health.consecutiveFailures': 3,
+				'health.authFailed': false,
+				'health.telemetryFresh': false,
+				'health.socStale': true,
+				'health.outageReason': 'consecutive_failures',
 			});
 		});
 	});
