@@ -149,4 +149,6 @@ Older entries are kept in [CHANGELOG_OLD.md](CHANGELOG_OLD.md).
 
 ## License
 
-MIT License — Copyright (c) 2026 Percy2Live
+MIT License
+
+Copyright (c) 2026 Percy2Live
