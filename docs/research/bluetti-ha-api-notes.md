@@ -215,14 +215,46 @@ Source-verified for the `PR30V2,EL30V2` model family at README matrix level (`RE
 | AC output power | listed as supported |
 | DC output power | listed as supported |
 
-Not yet verified from a real EL30V2 payload:
+## Verified Elite 30 V2 payload
 
-- exact `fnCode` set returned for EL30V2
-- exact `fnName` labels
-- exact `sensorInfo.sensorType` and `sensorInfo.unit` values
-- numeric value types vs string-only values
-- whether `ACLoadAllTotalPower`, `DCLoadAllTotalPower`, `PVAllTotalPower`, and `GridAllTotalPower` are the exact EL30V2 `fnCode` names or only generic mappings
-- whether UPS/bypass/mode information exists for EL30V2
+Captured 2026-07-05 from a live `GET /api/bluiotdata/ha/v1/deviceStates` response
+for a real Elite 30 V2 (`msgCode == 0`, serial redacted). The `stateList` held
+exactly these 12 entries; `fnValue` is delivered as a string in every entry:
+
+| `fnCode` | `fnName` | `fnType` | Example `fnValue` | ioBroker state |
+|---|---|---|---|---|
+| `SOC` | Battery Level | SENSOR | `79` | `battery.soc` |
+| `DsgFullTime` | Battery Time In Minutes | SENSOR | `2592` | `battery.dischargeRemaining` |
+| `ChgFullTime` | Full Charge Time In Minutes | SENSOR | `0` | `battery.chargeRemaining` |
+| `PVAllTotalPower` | Photovoltaics Input Power | SENSOR | `0` | `power.pvInput` |
+| `GridAllTotalPower` | Grid Input Power | SENSOR | `241` | `power.gridInput` |
+| `ACLoadAllTotalPower` | Alternating Current Out Power | SENSOR | `241` | `power.acOutput` |
+| `DCLoadAllTotalPower` | Direct Current Out Power | SENSOR | `0` | `power.dcOutput` |
+| `SetCtrlAc` | AC | SWITCH | `1` | `power.acOutputActive` (read-only) |
+| `SetCtrlDc` | DC | SWITCH | `0` | `power.dcOutputActive` (read-only) |
+| `SetACECO` | AC ECO | SWITCH | `0` | `power.acEco` (read-only) |
+| `SetDCECO` | DC ECO | SWITCH | `1` | `power.dcEco` (read-only) |
+| `SetCtrlWorkMode` | Working mode | SELECT | `workmode_3` | `device.workMode` |
+
+Confirmed by this capture:
+
+- The generic power fnCodes (`PVAllTotalPower`, `GridAllTotalPower`,
+  `ACLoadAllTotalPower`, `DCLoadAllTotalPower`) **are** the real EL30V2 names.
+- `fnValue` is string-typed for both sensors and switches; the adapter converts
+  per the target state's declared type.
+- The `SWITCH`/`SELECT` entries report current state; exposed read-only only.
+
+Not present in this payload, therefore **not** exposed (must not be invented):
+
+- remaining energy in Wh (`battery.remainingWh`)
+- battery temperature (`battery.temperature`)
+- explicit UPS bypass flag (`ups.bypassActive`)
+- `sensorInfo` metadata (absent from the EL30V2 `stateList` entries)
+
+Still open for other models / firmware:
+
+- exact `fnCode` set for non-EL30V2 devices
+- the full `SetCtrlWorkMode` enum value range and human labels
 
 ## Error handling and status signals
 
