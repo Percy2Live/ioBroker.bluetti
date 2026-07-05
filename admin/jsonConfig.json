@@ -20,28 +20,6 @@
 			"lg": 4,
 			"xl": 4
 		},
-		"oauthClientId": {
-			"type": "text",
-			"label": "oauthClientId",
-			"help": "oauthClientIdHelp",
-			"newLine": true,
-			"xs": 12,
-			"sm": 12,
-			"md": 6,
-			"lg": 4,
-			"xl": 4
-		},
-		"oauthClientSecret": {
-			"type": "password",
-			"label": "oauthClientSecret",
-			"help": "oauthClientSecretHelp",
-			"newLine": true,
-			"xs": 12,
-			"sm": 12,
-			"md": 6,
-			"lg": 4,
-			"xl": 4
-		},
 		"_oauthStart": {
 			"type": "sendTo",
 			"label": "authenticateWithBluetti",
@@ -51,7 +29,7 @@
 			"openUrl": true,
 			"showProcess": true,
 			"timeout": 15000,
-			"jsonData": "{\"adminOrigin\":\"${data._origin}\",\"oauthClientId\":\"${data.oauthClientId}\",\"oauthClientSecret\":\"${data.oauthClientSecret}\"}",
+			"jsonData": "{\"adminOrigin\":\"${data._origin}\"}",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,

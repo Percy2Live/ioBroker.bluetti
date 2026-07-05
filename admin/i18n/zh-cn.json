@@ -1,13 +1,9 @@
 {
 	"bluetti adapter settings": "BLUETTI 适配器设置",
 	"pollInterval": "轮询间隔（秒）",
-	"pollIntervalHelp": "两次 BLUETTI 遥测轮询之间的最短时间。首个实现保持只读。",
+	"pollIntervalHelp": "BLUETTI 遥测轮询之间的最短时间。初始实现仍为只读。",
 	"authHeader": "BLUETTI authentication",
 	"authStatus": "Authentication status",
-	"oauthClientId": "OAuth client ID",
-	"oauthClientIdHelp": "BLUETTI OAuth client ID. Store it in the adapter config before authenticating.",
-	"oauthClientSecret": "OAuth client secret",
-	"oauthClientSecretHelp": "BLUETTI OAuth client secret. It is stored encrypted/protected by ioBroker.",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "Select the device to poll. Requires prior authentication."

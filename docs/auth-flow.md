@@ -9,7 +9,8 @@
 > - **Default client credentials are shipped.** BLUETTI's SSO issues no per-user OAuth client;
 >   the adapter defaults to the fixed client used by the official Home Assistant integration
 >   (`client_id=HomeAssistant`, `client_secret=SG9tZUFzc2lzdGFudA==`, sent verbatim — it is *not*
->   base64-decoded). The Admin client-id/secret fields are optional overrides, not required input.
+>   base64-decoded). Admin no longer shows client-id/secret inputs; expert overrides still work via
+>   direct native-object edits.
 > - **The rotating OAuth token is stored in an encrypted state (`auth.tokenJson`), not in native
 >   config.** Every write to `system.adapter.<ns>` restarts the instance, so persisting the token
 >   (or transient auth status) to native caused restart loops on login and on every token refresh.
@@ -48,7 +49,7 @@ From the official Home Assistant integration, documented in `docs/research/bluet
 |---|---|
 | Authorization endpoint | `https://sso.bluettipower.com/oauth2/grant` |
 | Token endpoint | `https://sso.bluettipower.com/oauth2/token` |
-| Client credential | configured through ioBroker native config (`oauthClientId`, `oauthClientSecret`); no default client secret is hardcoded in the adapter |
+| Client credential | built-in default credentials are used by Admin; expert overrides can still be set directly in the native object |
 | Device list endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/devices` |
 | Device state endpoint | `GET https://gw.bluettipower.com/api/bluiotdata/ha/v1/deviceStates?sns=<serial>` |
 | Device binding endpoint | `POST https://gw.bluettipower.com/api/bluiotdata/ha/v1/bindDevices` with `{ "bindSnList": [...] }` |
@@ -221,7 +222,7 @@ Auth, cloud, and device failures must remain separate because outage-health stat
    - The request shape is source-backed by the Home Assistant integration and OAuth conventions; the post-login exchange still needs a live ioBroker callback test.
 
 4. **Admin auth configuration and callback wiring**
-   - `admin/jsonConfig.json` now has OAuth client-id/client-secret inputs, an auth-status textSendTo field, and a `sendTo` auth button for `getOAuthStartLink`.
+   - `admin/jsonConfig.json` has an auth-status textSendTo field and a one-button `sendTo` auth flow for `getOAuthStartLink`; no client-id/client-secret inputs are shown anymore.
    - `io-package.json` enables `messagebox` and stores `oauthClientSecret`/`oauthTokenJson` as protected and encrypted native fields.
    - `src/main.ts` handles `getOAuthStartLink`, `oauth2Callback`, and `getAuthStatus`, persists token JSON server-side, and does not return token material to Admin responses.
    - Device discovery/selection is still intentionally not wired.

@@ -46,11 +46,13 @@ Other BLUETTI models that expose the same cloud API are likely to work but are n
 
 1. Install the adapter and create a `bluetti.0` instance.
 2. Open the instance configuration in ioBroker Admin.
-3. Click **Authenticate with BLUETTI** and complete the login in the browser window that opens. Leave the *OAuth client ID* and *client secret* fields **empty** — the adapter ships the credentials, so you don't need your own.
+3. Click **Authenticate with BLUETTI** and complete the login in the browser window that opens. The adapter uses its built-in BLUETTI client credentials, so no client ID/secret fields are shown in the admin UI.
 4. Pick your device from the **device selector**.
 5. **Save.** Polling starts automatically; `info.connection` turns `true` once the first poll succeeds.
 
 You only authenticate once — the token is kept encrypted in the `auth.tokenJson` state and refreshed in the background.
+
+If you need to override the built-in client credentials for expert/debug use, edit the instance's native object directly in ioBroker. The adapter still falls back to its shipped defaults when those native values are empty.
 
 ## 📊 Objects & states
 
@@ -107,7 +109,7 @@ All states are **read-only**.
 | Option | Default | Description |
 |---|---|---|
 | Poll interval | `300 s` | How often the BLUETTI cloud is polled for fresh telemetry |
-| OAuth client ID / secret | *empty* | Optional override for the built-in credentials — leave empty |
+| OAuth client ID / secret | built in | Not exposed in Admin; expert overrides remain available via direct native-object edit |
 
 ## ⚠️ Cloud dependency & UPS caveat
 
