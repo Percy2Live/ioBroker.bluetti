@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "note": "Example state shape for the Hermes GitHub Autopilot. Real mutable state should be stored outside the repository checkout, not committed back to the repo.",
+  "repos": {
+    "Percy2Live/ioBroker.bluetti": {
+      "active": [
+        {
+          "issue": 50,
+          "state": "WAIT_FOR_CI",
+          "branch": "hermes/issue-50-remove-oauth-fields",
+          "pr": 123,
+          "claim_comment_id": 123456789,
+          "last_sha": "abc123",
+          "risk": "risk:low",
+          "attempts": {
+            "implementation": 1,
+            "ci_fix": 0
+          },
+          "timestamps": {
+            "claimed_at": "2026-07-05T12:00:00Z",
+            "updated_at": "2026-07-05T12:15:00Z"
+          }
+        }
+      ],
+      "completed": []
+    }
+  },
+  "states": [
+    "DISCOVER",
+    "SELECT_ISSUE",
+    "CLAIM",
+    "PREPARE_WORKSPACE",
+    "IMPLEMENT",
+    "LOCAL_VERIFY",
+    "OPEN_PR",
+    "WAIT_FOR_CI",
+    "FIX_CI_OR_ESCALATE",
+    "ENABLE_AUTO_MERGE",
+    "CLEANUP",
+    "COMPLETED",
+    "ESCALATED"
+  ],
+  "idempotency": {
+    "issue": "Resume if an active entry exists for the issue.",
+    "branch": "Fetch and reuse an existing remote branch instead of creating a duplicate.",
+    "pull_request": "Attach to an existing open PR that references the issue or branch.",
+    "claim_comment": "Update the existing Hermes claim comment instead of creating a second claim.",
+    "auto_merge": "Do not re-arm auto-merge if GitHub already reports it enabled."
+  }
+}
