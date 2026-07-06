@@ -6,5 +6,6 @@
 	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
-	"deviceSelectionHelp": "选择要轮询的设备。需要事先进行身份验证。"
+	"deviceSelectionHelp": "选择要轮询的设备。需要事先进行身份验证。",
+	"deviceSelectionHint": "请先进行身份验证以加载设备列表。"
 }

@@ -6,5 +6,6 @@
 	"authStatus": "Authentifizierungsstatus",
 	"authenticateWithBluetti": "Mit BLUETTI authentifizieren",
 	"deviceSelection": "BLUETTI-Gerät",
-	"deviceSelectionHelp": "Gerät für die Abfrage auswählen. Erfordert vorherige Authentifizierung."
+	"deviceSelectionHelp": "Gerät für die Abfrage auswählen. Erfordert vorherige Authentifizierung.",
+	"deviceSelectionHint": "Bitte zuerst authentifizieren, um die Geräteliste zu laden."
 }
