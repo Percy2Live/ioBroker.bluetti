@@ -6,5 +6,6 @@
 	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
-	"deviceSelectionHelp": "Wybierz urządzenie do odpytywania. Wymaga wcześniejszego uwierzytelnienia."
+	"deviceSelectionHelp": "Wybierz urządzenie do odpytywania. Wymaga wcześniejszego uwierzytelnienia.",
+	"deviceSelectionHint": "Najpierw uwierzytelnij się, aby wczytać listę urządzeń."
 }

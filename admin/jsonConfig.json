@@ -37,12 +37,25 @@
 			"lg": 4,
 			"xl": 4
 		},
+		"_deviceSelectionHint": {
+			"type": "staticText",
+			"text": "deviceSelectionHint",
+			"hidden": "data.oauthTokenJson",
+			"newLine": true,
+			"xs": 12,
+			"sm": 12,
+			"md": 6,
+			"lg": 4,
+			"xl": 4
+		},
 		"deviceSerial": {
 			"type": "selectSendTo",
 			"label": "deviceSelection",
 			"help": "deviceSelectionHelp",
 			"command": "getDevices",
 			"jsonData": "{}",
+			"hidden": "!data.oauthTokenJson",
+			"alsoDependsOn": ["oauthTokenJson"],
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,

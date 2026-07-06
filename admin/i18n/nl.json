@@ -6,5 +6,6 @@
 	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
-	"deviceSelectionHelp": "Selecteer het apparaat om te pollen. Vereist voorafgaande authenticatie."
+	"deviceSelectionHelp": "Selecteer het apparaat om te pollen. Vereist voorafgaande authenticatie.",
+	"deviceSelectionHint": "Authenticeer eerst om de apparatenlijst te laden."
 }

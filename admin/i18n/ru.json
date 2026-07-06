@@ -6,5 +6,6 @@
 	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
-	"deviceSelectionHelp": "Выберите устройство для опроса. Требуется предварительная аутентификация."
+	"deviceSelectionHelp": "Выберите устройство для опроса. Требуется предварительная аутентификация.",
+	"deviceSelectionHint": "Сначала пройдите аутентификацию, чтобы загрузить список устройств."
 }
