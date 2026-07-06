@@ -127,4 +127,29 @@ describe('Bluetti adapter lifecycle', () => {
 		expect(adapter.log.info.calledWith(sinon.match(/polling not started/i))).to.equal(true);
 		expect(database.getState('bluetti.0.info.connection')!.val).to.equal(false);
 	});
+
+	it('degrades gracefully when the persisted OAuth token is corrupt', async () => {
+		const { adapter, database } = createAdapter({ deviceSerial: 'BX-123456', pollInterval: 30 });
+
+		// A corrupt token in the auth state makes the token provider throw during
+		// startPolling(). The adapter must degrade gracefully instead of crashing
+		// into an uncaught-exception restart loop (see #71). encrypt/decrypt are
+		// wired to identity transforms, so the raw string is returned by decrypt().
+		database.publishState('bluetti.0.auth.tokenJson', { val: 'GARBAGE', ack: true });
+
+		// readyHandler must resolve (no crash) even though the stored token is invalid.
+		await adapter.readyHandler!();
+
+		// Polling never starts, so no telemetry objects are created.
+		expect(database.hasObject('bluetti.0.battery.soc')).to.equal(false);
+		expect(database.getState('bluetti.0.info.connection')!.val).to.equal(false);
+
+		const lastError = database.getState('bluetti.0.status.lastError');
+		expect(lastError, 'status.lastError should be written').to.not.be.undefined;
+		expect(lastError!.val).to.match(/invalid|corrupt|token/i);
+		expect(
+			adapter.log.warn.calledWith(sinon.match(/invalid|corrupt|token/i)),
+			'should warn about the corrupt token',
+		).to.equal(true);
+	});
 });
