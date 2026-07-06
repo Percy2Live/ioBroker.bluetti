@@ -1,0 +1,27 @@
+# Source TypeScript — only build/ is published
+src/
+test/
+tsconfig*.json
+
+# Internal tooling & automation
+.hermes/
+.github/autopilot*
+docs/autopilot.md
+docs/internal/
+
+# Dev config & editor noise
+.vscode/
+.idea/
+*.code-workspace
+.env
+.env.*
+.DS_Store
+*.log
+npm-debug.log
+
+# Adapter tooling
+.eslintrc*.json
+.prettierrc*
+babel.config.*
+commitlint.config.*
+.nycrc*
