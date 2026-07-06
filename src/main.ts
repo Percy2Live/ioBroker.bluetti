@@ -20,7 +20,11 @@ import {
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
 import { BluettiPollRunner } from './lib/bluetti-poll-runner';
 import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
-import { BluettiStoredTokenProvider, stringifyToken } from './lib/bluetti-stored-token-provider';
+import {
+	BluettiStoredTokenProvider,
+	BluettiStoredTokenProviderError,
+	stringifyToken,
+} from './lib/bluetti-stored-token-provider';
 import {
 	TELEMETRY_STATES,
 	TELEMETRY_FIELD_MAP,
@@ -134,7 +138,23 @@ class Bluetti extends utils.Adapter {
 
 		await this.ensureTelemetryObjects();
 
-		const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
+		// Constructing the token provider parses the persisted OAuth token, which throws
+		// on corrupt/invalid JSON. Degrade gracefully instead of crashing into a restart
+		// loop (see #71): stay idle with info.connection false and surface the error,
+		// mirroring the bail-out for missing auth/device above.
+		let provider: BluettiCloudProvider;
+		try {
+			provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
+		} catch (error) {
+			if (error instanceof BluettiStoredTokenProviderError) {
+				const message = `BLUETTI polling not started: stored token is invalid or corrupt: ${extractSafeErrorMessage(error)}`;
+				await this.setState('info.connection', false, true);
+				await this.setState('status.lastError', message, true);
+				this.log.warn(message);
+				return;
+			}
+			throw error;
+		}
 
 		// Bind the selected device to this API session before polling. Without it the
 		// deviceStates endpoint reports the device as unbound/offline with an empty
