@@ -8,8 +8,9 @@
 
 [![NPM version](https://img.shields.io/npm/v/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
 [![Downloads](https://img.shields.io/npm/dm/iobroker.bluetti.svg)](https://www.npmjs.com/package/iobroker.bluetti)
-![Number of Installations](https://iobroker.live/badges/bluetti-installed.svg)
-![Current version in stable repository](https://iobroker.live/badges/bluetti-stable.svg)
+<!-- Badges removed until adapter is in ioBroker repository (#81) -->
+<!-- ![Number of Installations](https://iobroker.live/badges/bluetti-installed.svg) -->
+<!-- ![Current version in stable repository](https://iobroker.live/badges/bluetti-stable.svg) -->
 ![Test and Release](https://github.com/Percy2Live/ioBroker.bluetti/workflows/Test%20and%20Release/badge.svg)
 
 </div>
