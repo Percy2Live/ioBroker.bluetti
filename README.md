@@ -44,6 +44,8 @@ Other BLUETTI models that expose the same cloud API are likely to work but are n
 
 ## 🚀 Installation & setup
 
+> The adapter is not yet in the ioBroker repository. To install it, open ioBroker Admin → **Adapter** → **Install from custom URL** (the GitHub icon in the top right) and enter `https://github.com/Percy2Live/ioBroker.bluetti/tarball/main`. After install, create a `bluetti.0` instance.
+
 1. Install the adapter and create a `bluetti.0` instance.
 2. Open the instance configuration in ioBroker Admin.
 3. Click **Authenticate with BLUETTI** and complete the login in the browser window that opens. The adapter uses its built-in BLUETTI client credentials, so no client ID/secret fields are shown in the admin UI.
