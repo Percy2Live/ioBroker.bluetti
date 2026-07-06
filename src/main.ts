@@ -8,6 +8,7 @@ import { toDeviceSelectItems, type BluettiDeviceSelectItem } from './lib/bluetti
 import {
 	UnknownTelemetryKeyTracker,
 	buildDiagnosticsSnapshot,
+	redactSerial,
 	type BluettiDiagnosticsSnapshot,
 } from './lib/bluetti-diagnostics';
 import {
@@ -174,7 +175,9 @@ class Bluetti extends utils.Adapter {
 			},
 		});
 		this.pollRunner.start();
-		this.log.info(`BLUETTI polling started for device ${deviceSerial} (interval ${this.config.pollInterval}s).`);
+		this.log.info(
+			`BLUETTI polling started for device ${redactSerial(deviceSerial)} (interval ${this.config.pollInterval}s).`,
+		);
 	}
 
 	// Creates the centralized read-only telemetry objects (channels + states) if
