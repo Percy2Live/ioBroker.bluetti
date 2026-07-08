@@ -1,6 +1,6 @@
 /* eslint-disable jsdoc/require-jsdoc */
 
-import type { BluettiUserProduct } from './bluetti-cloud-provider';
+import type { BluettiStateEntry, BluettiUserProduct } from './bluetti-cloud-provider';
 import type { BluettiPollingHealth } from './bluetti-polling-policy';
 
 export interface TelemetryStateCommon {
@@ -180,8 +180,9 @@ export const POWER_STATES: readonly TelemetryStateDef[] = [
 	},
 ];
 
-// Operational mode reported by the device. The raw enum value (e.g. "workmode_3")
-// is exposed as-is because the full label mapping is not payload-verified.
+// Operational mode reported by the device. When the payload carries a
+// supportModeValues lookup, the raw enum value (e.g. "workmode_3") is resolved to
+// its human-readable label; otherwise the raw value is exposed as a fallback.
 export const MODE_STATES: readonly TelemetryStateDef[] = [
 	{
 		id: 'device.workMode',
@@ -378,12 +379,54 @@ export function mapTelemetryFields(
 		if (stateId === undefined) {
 			continue;
 		}
-		const converted = convertTelemetryValue(STATE_TYPE_BY_ID[stateId], entry.fnValue);
+		const type = STATE_TYPE_BY_ID[stateId];
+		// SELECT-type states (e.g. workMode) carry a supportModeValues lookup that
+		// maps the raw fnValue code to a human-readable label; prefer it when present.
+		if (type === 'string') {
+			const label = resolveModeLabel(entry);
+			if (label !== null) {
+				values[stateId] = label;
+				continue;
+			}
+		}
+		const converted = convertTelemetryValue(type, entry.fnValue);
 		if (converted !== null) {
 			values[stateId] = converted;
 		}
 	}
 	return values;
+}
+
+// Resolves a SELECT-type fnValue (e.g. "workmode_3") to its human-readable label
+// via the entry's supportModeValues list (mirrors the official HA integration's
+// get_name_for_value). Returns null when the list is absent/malformed or the value
+// has no matching code, so callers fall through to the raw string conversion.
+export function resolveModeLabel(entry: BluettiStateEntry): string | null {
+	const modes = entry.supportModeValues;
+	if (!Array.isArray(modes)) {
+		return null;
+	}
+	const fnValue = entry.fnValue;
+	if (typeof fnValue !== 'string' && typeof fnValue !== 'number') {
+		return null;
+	}
+	const code = String(fnValue);
+	for (const mode of modes) {
+		if (
+			isObject(mode) &&
+			typeof mode.code === 'string' &&
+			typeof mode.name === 'string' &&
+			mode.code === code &&
+			mode.name.trim() !== ''
+		) {
+			return mode.name.trim();
+		}
+	}
+	return null;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
 }
 
 // Converts a raw fnValue to the declared state type. Unknown ids default to number

@@ -59,6 +59,11 @@ class Bluetti extends utils.Adapter {
 	private lastPollingHealth?: BluettiPollingHealth;
 	private lastKnownModel: string | null = null;
 	private lastApiStatus = 'unknown';
+	// Device model/name from getUserProducts, cached once at poll start. The
+	// deviceStates polling endpoint omits these fields, so they are merged into
+	// each telemetry write to keep device.model/device.name populated (see #95).
+	private cachedDeviceModel: string | null = null;
+	private cachedDeviceName: string | null = null;
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
 		super({
@@ -166,6 +171,8 @@ class Bluetti extends utils.Adapter {
 			this.log.warn(`BLUETTI device binding failed; telemetry may stay empty: ${extractSafeErrorMessage(error)}`);
 		}
 
+		await this.cacheDeviceMetadata(provider, deviceSerial);
+
 		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
 
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
@@ -215,9 +222,40 @@ class Bluetti extends utils.Adapter {
 		}
 	}
 
+	// Fetches device model/name from getUserProducts once at poll start and caches
+	// them, because the deviceStates polling endpoint never includes these fields
+	// (see #95). A missing device or a failed call is non-fatal: the states simply
+	// stay unset, mirroring the previous behavior.
+	private async cacheDeviceMetadata(provider: BluettiCloudProvider, deviceSerial: string): Promise<void> {
+		try {
+			const products = await provider.getUserProducts();
+			const product = products.find(candidate => candidate.sn === deviceSerial);
+			if (!product) {
+				this.log.warn(
+					`BLUETTI device ${redactSerial(deviceSerial)} not found in account; model/name stay unset.`,
+				);
+				return;
+			}
+			this.cachedDeviceModel = (product.model ?? '').trim() || null;
+			this.cachedDeviceName = (product.name ?? '').trim() || null;
+		} catch (error) {
+			this.log.warn(
+				`BLUETTI device metadata unavailable; model/name stay unset: ${extractSafeErrorMessage(error)}`,
+			);
+		}
+	}
+
 	private async writeTelemetry(product: BluettiUserProduct): Promise<void> {
 		this.trackDiagnostics(product);
-		await this.writeStateValues({ ...mapDeviceMetadata(product), ...mapTelemetryFields(product) });
+		// The deviceStates payload omits model/name, so merge the cached values from
+		// getUserProducts before mapping metadata (see #95). The payload's own fields
+		// still win when present.
+		const enrichedProduct: BluettiUserProduct = {
+			...product,
+			model: (product.model ?? '').trim() || this.cachedDeviceModel,
+			name: (product.name ?? '').trim() || this.cachedDeviceName,
+		};
+		await this.writeStateValues({ ...mapDeviceMetadata(enrichedProduct), ...mapTelemetryFields(product) });
 	}
 
 	// Remembers the last-known model for diagnostics and logs any telemetry fnCodes
