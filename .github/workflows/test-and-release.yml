@@ -76,8 +76,48 @@ jobs:
       contents: write
 
     steps:
-      - uses: ioBroker/testing-action-deploy@v1
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          build: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'npm'
+
+      - name: Extract version from tag
+        shell: bash
+        id: extract_release
+        run: |
+          TAG_REF="${{ github.ref }}"
+          VERSION=${TAG_REF##*/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_REF=$TAG_REF" >> $GITHUB_OUTPUT
+          EOF=$(od -An -N6 -x /dev/urandom | tr -d ' ')
+          BODY=$(git show -s --format=%b)
+          echo "BODY<<$EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+          if [[ $VERSION == *"-"* ]] ; then
+            echo "TAG=--tag next" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm (trusted publishing / OIDC)
+        run: npm publish ${{ steps.extract_release.outputs.TAG }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.extract_release.outputs.TAG_REF }}
+          name: Release v${{ steps.extract_release.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(steps.extract_release.outputs.VERSION, '-') }}
+          body: ${{ steps.extract_release.outputs.BODY }}
