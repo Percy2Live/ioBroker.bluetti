@@ -5,7 +5,8 @@ import { expect } from 'chai';
 // @ts-expect-error Runtime import resolved by ts-node.
 import * as telemetry from './bluetti-telemetry-model.ts';
 
-const { TELEMETRY_STATES, mapDeviceMetadata, mapTelemetryFields, mapHealth, toTelemetryNumber } = telemetry;
+const { TELEMETRY_STATES, mapDeviceMetadata, mapTelemetryFields, mapHealth, resolveModeLabel, toTelemetryNumber } =
+	telemetry;
 
 describe('bluetti telemetry model', () => {
 	describe('object definitions', () => {
@@ -196,6 +197,41 @@ describe('bluetti telemetry model', () => {
 			}
 		});
 
+		it('resolves workMode to its supportModeValues label instead of the raw code', () => {
+			const values = mapTelemetryFields({
+				sn: 'SN1',
+				online: '1',
+				stateList: [
+					{
+						fnCode: 'SetCtrlWorkMode',
+						fnType: 'SELECT',
+						fnValue: 'workmode_3',
+						supportModeValues: [
+							{ code: 'workmode_1', name: 'Standard' },
+							{ code: 'workmode_3', name: 'Time Control' },
+						],
+					},
+				],
+			});
+			expect(values).to.deep.equal({ 'device.workMode': 'Time Control' });
+		});
+
+		it('falls back to the raw workMode value when no supportModeValues code matches', () => {
+			const values = mapTelemetryFields({
+				sn: 'SN1',
+				online: '1',
+				stateList: [
+					{
+						fnCode: 'SetCtrlWorkMode',
+						fnType: 'SELECT',
+						fnValue: 'workmode_9',
+						supportModeValues: [{ code: 'workmode_1', name: 'Standard' }],
+					},
+				],
+			});
+			expect(values).to.deep.equal({ 'device.workMode': 'workmode_9' });
+		});
+
 		it('maps numeric fnValues via an injected field map and ignores unknown/non-numeric', () => {
 			const values = mapTelemetryFields(
 				{
@@ -211,6 +247,72 @@ describe('bluetti telemetry model', () => {
 				{ SOC: 'battery.soc', AC_OUT: 'power.acOutput', JUNK: 'power.dcOutput' },
 			);
 			expect(values).to.deep.equal({ 'battery.soc': 87, 'power.acOutput': 150 });
+		});
+	});
+
+	describe('resolveModeLabel', () => {
+		it('returns the matching mode name for the fnValue code', () => {
+			const label = resolveModeLabel({
+				fnCode: 'SetCtrlWorkMode',
+				fnValue: 'workmode_3',
+				supportModeValues: [
+					{ code: 'workmode_2', name: 'Silent' },
+					{ code: 'workmode_3', name: 'Time Control' },
+				],
+			});
+			expect(label).to.equal('Time Control');
+		});
+
+		it('matches numeric fnValues against string codes', () => {
+			const label = resolveModeLabel({
+				fnCode: 'SetCtrlWorkMode',
+				fnValue: 3,
+				supportModeValues: [{ code: '3', name: 'Time Control' }],
+			});
+			expect(label).to.equal('Time Control');
+		});
+
+		it('returns null when supportModeValues is absent, malformed, or has no match', () => {
+			expect(resolveModeLabel({ fnCode: 'SetCtrlWorkMode', fnValue: 'workmode_3' })).to.equal(null);
+			expect(
+				resolveModeLabel({ fnCode: 'SetCtrlWorkMode', fnValue: 'workmode_3', supportModeValues: 'nope' }),
+			).to.equal(null);
+			expect(
+				resolveModeLabel({
+					fnCode: 'SetCtrlWorkMode',
+					fnValue: 'workmode_9',
+					supportModeValues: [{ code: 'workmode_3', name: 'Time Control' }],
+				}),
+			).to.equal(null);
+			expect(
+				resolveModeLabel({
+					fnCode: 'SetCtrlWorkMode',
+					fnValue: 'workmode_3',
+					supportModeValues: [{ code: 'workmode_3', name: '' }],
+				}),
+			).to.equal(null);
+		});
+	});
+
+	// The polling deviceStates payload omits model/name, so main.ts merges the
+	// cached getUserProducts values into the product before calling mapDeviceMetadata.
+	// These tests cover that merge shape at the model level.
+	describe('mapDeviceMetadata with merged cache values', () => {
+		it('populates model/name from merged cache when the payload lacks them', () => {
+			const values = mapDeviceMetadata({
+				sn: 'SN1',
+				online: '1',
+				stateList: [],
+				// Values a caller merged from the getUserProducts cache.
+				model: 'EL30V2',
+				name: 'Keller',
+			});
+			expect(values).to.deep.equal({
+				'device.serial': 'SN1',
+				'device.name': 'Keller',
+				'device.model': 'EL30V2',
+				'device.online': true,
+			});
 		});
 	});
 
