@@ -1,7 +1,7 @@
 {
 	"common": {
 		"name": "bluetti",
-		"version": "0.0.1",
+		"version": "0.0.2",
 		"news": {
 			"0.0.1": {
 				"en": "initial release",
@@ -15,6 +15,19 @@
 				"pl": "Pierwsze wydanie",
 				"uk": "Початкова версія",
 				"zh-cn": "首次出版"
+			},
+			"0.0.2": {
+				"en": "Trusted publishing with provenance signing via CI",
+				"de": "Trusted Publishing mit Provenance-Signatur über CI",
+				"ru": "Trusted Publishing с подписью происхождения через CI",
+				"pt": "Publicação confiável com assinatura de proveniência via CI",
+				"nl": "Vertrouwd publiceren met herkomstondertekening via CI",
+				"fr": "Publication de confiance avec signature de provenance via CI",
+				"it": "Pubblicazione attendibile con firma di provenienza tramite CI",
+				"es": "Publicación confiable con firma de procedencia a través de CI",
+				"pl": "Zaufane publikowanie z podpisem pochodzenia przez CI",
+				"uk": "Довірена публікація з підписом походження через CI",
+				"zh-cn": "通过 CI 进行可信发布并带有来源签名"
 			}
 		},
 		"titleLang": {
