@@ -45,7 +45,7 @@ Other BLUETTI models that expose the same cloud API are likely to work but are n
 
 ## 🚀 Installation & setup
 
-> The adapter is not yet in the ioBroker repository. Once accepted, you can install it directly from the ioBroker Admin UI (**Adapter** → search for "bluetti"). Until then, see [Development](#-development) below for manual installation.
+> The adapter is not yet in the ioBroker repository. Once accepted, you can install it directly from the ioBroker Admin UI (**Adapter** → search for "bluetti").
 
 1. Install the adapter and create a `bluetti.0` instance.
 2. Open the instance configuration in ioBroker Admin.
@@ -123,8 +123,6 @@ A cloud-only adapter **cannot prove a grid outage on its own**. It can only expo
 ## 🛠️ Development
 
 The adapter is a TypeScript, class-based ioBroker adapter with a JSON admin config, scaffolded with `@iobroker/create-adapter`.
-
-**Manual installation (for testing before repository acceptance):** clone this repo, run `npm run build`, then install from the local tarball via ioBroker Admin → **Adapter** → **Install from custom URL** → `file:///path/to/iobroker.bluetti-<version>.tgz`.
 
 | Script | Purpose |
 |---|---|
