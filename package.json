@@ -82,5 +82,8 @@
     "serialize-javascript": "^7.0.7",
     "diff": "^9.0.0"
   },
-  "readmeFilename": "README.md"
+  "readmeFilename": "README.md",
+  "publishConfig": {
+    "provenance": true
+  }
 }

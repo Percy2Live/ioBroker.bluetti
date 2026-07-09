@@ -84,6 +84,7 @@ jobs:
         with:
           node-version: '24.x'
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Extract version from tag
         shell: bash
@@ -108,8 +109,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Upgrade npm to v11 for trusted publishing
+        run: npm install -g npm@11
+
       - name: Publish to npm (trusted publishing / OIDC)
-        run: npm publish ${{ steps.extract_release.outputs.TAG }}
+        run: npm publish --provenance ${{ steps.extract_release.outputs.TAG }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
