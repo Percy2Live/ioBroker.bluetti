@@ -145,6 +145,18 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+### 0.0.2
+
+- Trusted publishing setup: OIDC-based npm publish with provenance signing, registry-url and npm 11 in CI.
+- Populate `device.model` and `device.name` from `getUserProducts` cache; resolve `workMode` labels via `supportModeValues`.
+- Device selector always visible (removed broken `authStatus`-based `hidden` logic); empty list signals unauthenticated state.
+- Degrade gracefully when persisted OAuth token is corrupt instead of crashing the adapter.
+- Refresh device list after OAuth completes without reopening the config dialog.
+- Redact device serial in info-level polling log line.
+- Repo cleanup: remove non-adapter files, redundant `publishConfig`, and GitHub/npm install instructions from README.
+- Remove `prepare` lifecycle script and set `common.noGit` to suppress repochecker warnings.
+- Add local repochecker audit results and prepare `ioBroker.repositories` submission entry.
+
 ### 0.0.1
 
 - Initial release: BLUETTI cloud OAuth login, device discovery/selection, and read-only telemetry polling for the Elite 30 V2.
