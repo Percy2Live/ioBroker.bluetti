@@ -96,7 +96,8 @@
 				"admin": ">=7.6.20"
 			}
 		],
-		"messagebox": true
+		"messagebox": true,
+		"noGit": true
 	},
 	"native": {
 		"pollInterval": 300,
