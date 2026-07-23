@@ -1,0 +1,6 @@
+# Auto-merge configuration
+# Dependabot PRs are auto-merged once CI passes
+minActors:
+  - dependabot[bot]
+mergeMethod: squash
+deleteBranchAfterMerge: true
