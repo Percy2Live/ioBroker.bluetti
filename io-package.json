@@ -1,177 +1,177 @@
 {
-	"common": {
-		"name": "bluetti",
-		"version": "0.0.2",
-		"news": {
-			"0.0.1": {
-				"en": "initial release",
-				"de": "Erstveröffentlichung",
-				"ru": "Начальная версия",
-				"pt": "lançamento inicial",
-				"nl": "Eerste uitgave",
-				"fr": "Première version",
-				"it": "Versione iniziale",
-				"es": "Versión inicial",
-				"pl": "Pierwsze wydanie",
-				"uk": "Початкова версія",
-				"zh-cn": "首次出版"
-			},
-			"0.0.2": {
-				"en": "Trusted publishing with provenance signing via CI",
-				"de": "Trusted Publishing mit Provenance-Signatur über CI",
-				"ru": "Trusted Publishing с подписью происхождения через CI",
-				"pt": "Publicação confiável com assinatura de proveniência via CI",
-				"nl": "Vertrouwd publiceren met herkomstondertekening via CI",
-				"fr": "Publication de confiance avec signature de provenance via CI",
-				"it": "Pubblicazione attendibile con firma di provenienza tramite CI",
-				"es": "Publicación confiable con firma de procedencia a través de CI",
-				"pl": "Zaufane publikowanie z podpisem pochodzenia przez CI",
-				"uk": "Довірена публікація з підписом походження через CI",
-				"zh-cn": "通过 CI 进行可信发布并带有来源签名"
-			}
-		},
-		"titleLang": {
-			"en": "BLUETTI",
-			"de": "BLUETTI",
-			"ru": "BLUETTI",
-			"pt": "BLUETTI",
-			"nl": "BLUETTI",
-			"fr": "BLUETTI",
-			"it": "BLUETTI",
-			"es": "BLUETTI",
-			"pl": "BLUETTI",
-			"uk": "BLUETTI",
-			"zh-cn": "BLUETTI"
-		},
-		"desc": {
-			"en": "BLUETTI power station telemetry",
-			"de": "BLUETTI Power-Station-Telemetrie",
-			"ru": "Телеметрия электростанции BLUETTI",
-			"pt": "Telemetria da central elétrica BLUETTI",
-			"nl": "BLUETTI-telemetrie van de elektriciteitscentrale",
-			"fr": "Télémétrie de la centrale BLUETTI",
-			"it": "Telemetria centrale BLUETTI",
-			"es": "Telemetría de central eléctrica BLUETTI",
-			"pl": "Telemetria elektrowni BLUETTI",
-			"uk": "Телеметрія електростанції BLUETTI",
-			"zh-cn": "BLUETTI 电站遥测"
-		},
-		"authors": [
-			"Percy2Live <63621052+Percy2Live@users.noreply.github.com>"
-		],
-		"keywords": [
-			"bluetti",
-			"power station",
-			"battery",
-			"energy",
-			"telemetry",
-			"iot"
-		],
-		"licenseInformation": {
-			"type": "free",
-			"license": "MIT"
-		},
-		"platform": "Javascript/Node.js",
-		"icon": "bluetti.png",
-		"enabled": true,
-		"extIcon": "https://raw.githubusercontent.com/Percy2Live/ioBroker.bluetti/main/admin/bluetti.png",
-		"readme": "https://github.com/Percy2Live/ioBroker.bluetti/blob/main/README.md",
-		"loglevel": "info",
-		"tier": 3,
-		"mode": "daemon",
-		"type": "energy",
-		"compact": true,
-		"connectionType": "cloud",
-		"dataSource": "poll",
-		"adminUI": {
-			"config": "json"
-		},
-		"dependencies": [
-			{
-				"js-controller": ">=6.0.11"
-			}
-		],
-		"globalDependencies": [
-			{
-				"admin": ">=7.6.20"
-			}
-		],
-		"messagebox": true,
-		"nogit": true
-	},
-	"native": {
-		"pollInterval": 300,
-		"oauthClientId": "",
-		"oauthClientSecret": "",
-		"oauthTokenJson": "",
-		"oauthLastRefresh": "",
-		"authStatus": "not_authenticated",
-		"deviceSerial": ""
-	},
-	"objects": [],
-	"instanceObjects": [
-		{
-			"_id": "info",
-			"type": "channel",
-			"common": {
-				"name": "Information"
-			},
-			"native": {}
-		},
-		{
-			"_id": "info.connection",
-			"type": "state",
-			"common": {
-				"role": "indicator.connected",
-				"name": "Device or service connected",
-				"type": "boolean",
-				"read": true,
-				"write": false,
-				"def": false
-			},
-			"native": {}
-		},
-		{
-			"_id": "status",
-			"type": "channel",
-			"common": {
-				"name": "Status"
-			},
-			"native": {}
-		},
-		{
-			"_id": "status.lastUpdate",
-			"type": "state",
-			"common": {
-				"role": "date",
-				"name": "Last successful poll",
-				"type": "string",
-				"read": true,
-				"write": false,
-				"def": ""
-			},
-			"native": {}
-		},
-		{
-			"_id": "status.lastError",
-			"type": "state",
-			"common": {
-				"role": "text",
-				"name": "Last poll error",
-				"type": "string",
-				"read": true,
-				"write": false,
-				"def": ""
-			},
-			"native": {}
-		}
-	],
-	"protectedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
-	],
-	"encryptedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
-	]
+  "common": {
+    "name": "bluetti",
+    "version": "0.0.2",
+    "news": {
+      "0.0.1": {
+        "en": "initial release",
+        "de": "Erstveröffentlichung",
+        "ru": "Начальная версия",
+        "pt": "lançamento inicial",
+        "nl": "Eerste uitgave",
+        "fr": "Première version",
+        "it": "Versione iniziale",
+        "es": "Versión inicial",
+        "pl": "Pierwsze wydanie",
+        "uk": "Початкова версія",
+        "zh-cn": "首次出版"
+      },
+      "0.0.2": {
+        "en": "Trusted publishing with provenance signing via CI",
+        "de": "Trusted Publishing mit Provenance-Signatur über CI",
+        "ru": "Trusted Publishing с подписью происхождения через CI",
+        "pt": "Publicação confiável com assinatura de proveniência via CI",
+        "nl": "Vertrouwd publiceren met herkomstondertekening via CI",
+        "fr": "Publication de confiance avec signature de provenance via CI",
+        "it": "Pubblicazione attendibile con firma di provenienza tramite CI",
+        "es": "Publicación confiable con firma de procedencia a través de CI",
+        "pl": "Zaufane publikowanie z podpisem pochodzenia przez CI",
+        "uk": "Довірена публікація з підписом походження через CI",
+        "zh-cn": "通过 CI 进行可信发布并带有来源签名"
+      }
+    },
+    "titleLang": {
+      "en": "BLUETTI",
+      "de": "BLUETTI",
+      "ru": "BLUETTI",
+      "pt": "BLUETTI",
+      "nl": "BLUETTI",
+      "fr": "BLUETTI",
+      "it": "BLUETTI",
+      "es": "BLUETTI",
+      "pl": "BLUETTI",
+      "uk": "BLUETTI",
+      "zh-cn": "BLUETTI"
+    },
+    "desc": {
+      "en": "BLUETTI power station telemetry",
+      "de": "BLUETTI Power-Station-Telemetrie",
+      "ru": "Телеметрия электростанции BLUETTI",
+      "pt": "Telemetria da central elétrica BLUETTI",
+      "nl": "BLUETTI-telemetrie van de elektriciteitscentrale",
+      "fr": "Télémétrie de la centrale BLUETTI",
+      "it": "Telemetria centrale BLUETTI",
+      "es": "Telemetría de central eléctrica BLUETTI",
+      "pl": "Telemetria elektrowni BLUETTI",
+      "uk": "Телеметрія електростанції BLUETTI",
+      "zh-cn": "BLUETTI 电站遥测"
+    },
+    "authors": [
+      "Percy2Live <63621052+Percy2Live@users.noreply.github.com>"
+    ],
+    "keywords": [
+      "bluetti",
+      "power station",
+      "battery",
+      "energy",
+      "telemetry",
+      "iot"
+    ],
+    "licenseInformation": {
+      "type": "free",
+      "license": "MIT"
+    },
+    "platform": "Javascript/Node.js",
+    "icon": "bluetti.png",
+    "enabled": true,
+    "extIcon": "https://raw.githubusercontent.com/Percy2Live/ioBroker.bluetti/main/admin/bluetti.png",
+    "readme": "https://github.com/Percy2Live/ioBroker.bluetti/blob/main/README.md",
+    "loglevel": "info",
+    "tier": 3,
+    "mode": "daemon",
+    "type": "energy",
+    "compact": true,
+    "connectionType": "cloud",
+    "dataSource": "poll",
+    "adminUI": {
+      "config": "json"
+    },
+    "dependencies": [
+      {
+        "js-controller": ">=6.0.11"
+      }
+    ],
+    "globalDependencies": [
+      {
+        "admin": ">=7.8.23"
+      }
+    ],
+    "messagebox": true,
+    "nogit": true
+  },
+  "native": {
+    "pollInterval": 300,
+    "oauthClientId": "",
+    "oauthClientSecret": "",
+    "oauthTokenJson": "",
+    "oauthLastRefresh": "",
+    "authStatus": "not_authenticated",
+    "deviceSerial": ""
+  },
+  "objects": [],
+  "instanceObjects": [
+    {
+      "_id": "info",
+      "type": "channel",
+      "common": {
+        "name": "Information"
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "role": "indicator.connected",
+        "name": "Device or service connected",
+        "type": "boolean",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "status",
+      "type": "channel",
+      "common": {
+        "name": "Status"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.lastUpdate",
+      "type": "state",
+      "common": {
+        "role": "date",
+        "name": "Last successful poll",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.lastError",
+      "type": "state",
+      "common": {
+        "role": "text",
+        "name": "Last poll error",
+        "type": "string",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    }
+  ],
+  "protectedNative": [
+    "oauthClientSecret",
+    "oauthTokenJson"
+  ],
+  "encryptedNative": [
+    "oauthClientSecret",
+    "oauthTokenJson"
+  ]
 }

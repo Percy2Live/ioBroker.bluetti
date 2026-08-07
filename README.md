@@ -143,6 +143,10 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+
+### **WORK IN PROGRESS**
+- (ioBroker-Bot) Adapter requires admin >= 7.8.23 now.
+
 ### 0.0.2
 
 - Trusted publishing setup: OIDC-based npm publish with provenance signing, registry-url and npm 11 in CI.
