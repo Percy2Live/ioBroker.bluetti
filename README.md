@@ -55,6 +55,8 @@ Other BLUETTI models that expose the same cloud API are likely to work but are n
 
 You only authenticate once — the token is kept encrypted in the `auth.tokenJson` state and refreshed in the background.
 
+> **Security note:** The OAuth token is stored in an encrypted ioBroker state (`auth.tokenJson`) with `read: false, write: false`. The encryption protects against casual exposure and backup/file-system access. Any ioBroker admin user can still read and decrypt the state via scripting or the REST API, since the encryption key is instance-wide. This is an accepted tradeoff: ioBroker admin users already have full system access, so the encrypted state does not weaken the overall security posture.
+
 If you need to override the built-in client credentials for expert/debug use, edit the instance's native object directly in ioBroker. The adapter still falls back to its shipped defaults when those native values are empty.
 
 ## 📊 Objects & states

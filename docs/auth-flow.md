@@ -135,6 +135,21 @@ Store token data in the encrypted `auth.tokenJson` state, not in native config f
 
 `auth.tokenJson` is encrypted with `this.encrypt()` and stored as an ioBroker state to avoid adapter restarts on token rotation.
 
+### Security assessment (#141)
+
+The `auth.tokenJson` state is declared with `read: false, write: false` and its value is encrypted via `this.encrypt()`. This protects against:
+
+- Casual exposure in the Admin UI object tree (hidden from view)
+- Backup leaks and direct file-system access (encrypted at rest)
+
+It does **not** protect against an ioBroker admin user, who can read the raw state value via scripting or the REST API and decrypt it using the instance-wide encryption key. This is an accepted tradeoff:
+
+- ioBroker admin users already have full system access (file system, database, other adapters, native config).
+- Moving the token to `encryptedNative` would reintroduce the adapter restart loop on every token refresh (each native-config write triggers a js-controller restart), which was the exact problem fixed by moving tokens to a state in #140.
+- Storing the token in the file system would lose ioBroker's built-in encryption and complicate debugging.
+
+The encrypted state is the correct ioBroker-idiomatic approach for rotating tokens that must not trigger adapter restarts.
+
 Device serials are not OAuth secrets but can identify the user's hardware. They should not be logged in full. Whether to encrypt them is a product decision; protecting them is reasonable.
 
 Persisting refreshed token data requires updating the instance object, not only mutating `this.config`. The implementation should update `system.adapter.<namespace>.native` through ioBroker object APIs, preserving unrelated native fields.
