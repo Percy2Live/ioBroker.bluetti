@@ -2,9 +2,9 @@
 	"bluetti adapter settings": "Adapterinstellingen voor BLUETTI",
 	"pollInterval": "Pollinginterval (seconden)",
 	"pollIntervalHelp": "Minimale tijd tussen BLUETTI-telemetrie-opvragingen. De eerste implementatie blijft alleen-lezen.",
-	"authHeader": "BLUETTI authentication",
-	"authenticateWithBluetti": "Authenticate with BLUETTI",
-	"deviceSelection": "BLUETTI device",
+	"authHeader": "BLUETTI-authenticatie",
+	"authenticateWithBluetti": "Authenticeren met BLUETTI",
+	"deviceSelection": "BLUETTI-apparaat",
 	"deviceSelectionHelp": "Selecteer het apparaat om te pollen. Vereist voorafgaande authenticatie.",
 	"deviceSelectionHint": "Authenticeer eerst om de apparatenlijst te laden."
 }
