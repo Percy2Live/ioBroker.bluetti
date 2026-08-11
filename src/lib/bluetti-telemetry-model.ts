@@ -62,7 +62,7 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 		common: {
 			name: 'Battery discharge time remaining',
 			type: 'number',
-			role: 'value.interval',
+			role: 'value',
 			unit: 'min',
 			min: 0,
 			read: true,
@@ -75,7 +75,7 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 		common: {
 			name: 'Battery full-charge time remaining',
 			type: 'number',
-			role: 'value.interval',
+			role: 'value',
 			unit: 'min',
 			min: 0,
 			read: true,
