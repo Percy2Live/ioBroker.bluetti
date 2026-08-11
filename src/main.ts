@@ -45,6 +45,15 @@ interface PendingOAuthCredentials {
 // so persisting a refreshed token to native would restart the adapter on every token
 // rotation (and refresh runs whenever the token is near expiry). States can be written
 // freely without a restart. The value is encrypted with this.encrypt() at rest.
+//
+// Security note: the state is declared with read:false/write:false so it does not
+// appear in the Admin object tree, and the value is encrypted via this.encrypt()
+// (instance-wide key). This protects against casual exposure and backup/file-system
+// access. However, any ioBroker admin user can still read the raw state value via
+// scripting or the REST API and decrypt it, since the encryption key is shared across
+// the ioBroker instance. This is an accepted tradeoff: ioBroker admin users already
+// have full system access (filesystem, database, other adapters), so the encrypted
+// state does not weaken the overall security posture. See #141.
 const TOKEN_STATE_ID = 'auth.tokenJson';
 
 class Bluetti extends utils.Adapter {
