@@ -19,7 +19,7 @@ import {
 } from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
 import { BluettiPollRunner } from './lib/bluetti-poll-runner';
-import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
+import { BluettiPollingPolicy, MIN_POLL_INTERVAL_MS, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
 import {
 	BluettiStoredTokenProvider,
 	BluettiStoredTokenProviderError,
@@ -173,7 +173,11 @@ class Bluetti extends utils.Adapter {
 
 		await this.cacheDeviceMetadata(provider, deviceSerial);
 
-		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
+		const pollIntervalMs = Math.min(
+			Math.max(Math.round(this.config.pollInterval * 1000), MIN_POLL_INTERVAL_MS),
+			86_400_000,
+		);
+		const policy = new BluettiPollingPolicy({ basePollIntervalMs: pollIntervalMs });
 
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
 			policy,
