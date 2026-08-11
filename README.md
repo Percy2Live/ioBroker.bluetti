@@ -145,6 +145,13 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+### 1.0.0
+
+- First stable release: full repochecker compliance, OIDC trusted publishing with provenance signing.
+- All pre-release repochecker findings resolved (#103–#107, #123, #124).
+- Object structure dump validated and attached to ioBroker repository submission (#108).
+- Adapter submitted to ioBroker latest repository (#81).
+
 ### 0.0.2
 
 - Trusted publishing setup: OIDC-based npm publish with provenance signing, registry-url and npm 11 in CI.
