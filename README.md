@@ -147,7 +147,7 @@ Architecture and research notes:
 
 - Trusted publishing setup: OIDC-based npm publish with provenance signing, registry-url and npm 11 in CI.
 - Populate `device.model` and `device.name` from `getUserProducts` cache; resolve `workMode` labels via `supportModeValues`.
-- Device selector always visible (removed broken `authStatus`-based `hidden` logic); empty list signals unauthenticated state.
+- Device selector always visible; empty list signals unauthenticated state.
 - Degrade gracefully when persisted OAuth token is corrupt instead of crashing the adapter.
 - Refresh device list after OAuth completes without reopening the config dialog.
 - Redact device serial in info-level polling log line.

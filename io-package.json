@@ -103,9 +103,6 @@
 		"pollInterval": 300,
 		"oauthClientId": "",
 		"oauthClientSecret": "",
-		"oauthTokenJson": "",
-		"oauthLastRefresh": "",
-		"authStatus": "not_authenticated",
 		"deviceSerial": ""
 	},
 	"objects": [],
@@ -167,11 +164,9 @@
 		}
 	],
 	"protectedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
+		"oauthClientSecret"
 	],
 	"encryptedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
+		"oauthClientSecret"
 	]
 }

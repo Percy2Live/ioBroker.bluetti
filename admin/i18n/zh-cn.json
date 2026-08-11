@@ -3,7 +3,6 @@
 	"pollInterval": "轮询间隔（秒）",
 	"pollIntervalHelp": "BLUETTI 遥测轮询之间的最短时间。初始实现仍为只读。",
 	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "选择要轮询的设备。需要事先进行身份验证。",
