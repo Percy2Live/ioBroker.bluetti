@@ -106,19 +106,11 @@ class Bluetti extends utils.Adapter {
 		});
 	}
 
-	// Loads the stored OAuth token from the auth state (decrypting it). Falls back to a
-	// legacy token in native config (pre-#42 storage) and migrates it into the state, so
-	// an already-authenticated user does not have to log in again after upgrading.
+	// Loads the stored OAuth token from the auth state (decrypting it).
 	private async loadStoredToken(): Promise<string> {
 		const state = await this.getStateAsync(TOKEN_STATE_ID);
 		if (typeof state?.val === 'string' && state.val) {
 			return this.decrypt(state.val);
-		}
-
-		const legacy = (this.config.oauthTokenJson ?? '').trim();
-		if (legacy) {
-			await this.persistTokenJson(legacy);
-			return legacy;
 		}
 
 		return '';
@@ -339,9 +331,6 @@ class Bluetti extends utils.Adapter {
 				case 'oauth2Callback':
 					this.sendMessageResponse(message, await this.handleOAuthCallback(message.message));
 					break;
-				case 'getAuthStatus':
-					this.sendMessageResponse(message, this.createAuthStatusResponse());
-					break;
 				case 'getDevices':
 					this.sendMessageResponse(message, await this.handleGetDevices());
 					break;
@@ -432,7 +421,7 @@ class Bluetti extends utils.Adapter {
 
 	// Lists the BLUETTI devices bound to the authenticated account for the
 	// jsonConfig device selector. Returns an empty list (never an error) so a
-	// missing/expired login just yields no options instead of flipping authStatus.
+	// missing/expired login just yields no options instead of an error.
 	private async handleGetDevices(): Promise<BluettiDeviceSelectItem[]> {
 		try {
 			const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
@@ -442,12 +431,6 @@ class Bluetti extends utils.Adapter {
 			this.log.warn(`BLUETTI device list unavailable: ${extractSafeErrorMessage(error)}`);
 			return [];
 		}
-	}
-
-	private createAuthStatusResponse(): { text: string } {
-		return {
-			text: this.oauthTokenJson ? 'authenticated' : 'not_authenticated',
-		};
 	}
 
 	private sendMessageResponse(message: ioBroker.Message, response: unknown): void {

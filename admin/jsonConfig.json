@@ -9,17 +9,6 @@
 			"newLine": true,
 			"xs": 12
 		},
-		"authStatus": {
-			"type": "textSendTo",
-			"label": "authStatus",
-			"command": "getAuthStatus",
-			"newLine": true,
-			"xs": 12,
-			"sm": 12,
-			"md": 6,
-			"lg": 4,
-			"xl": 4
-		},
 		"_oauthStart": {
 			"type": "sendTo",
 			"label": "authenticateWithBluetti",
@@ -40,7 +29,6 @@
 		"_deviceSelectionHint": {
 			"type": "staticText",
 			"text": "deviceSelectionHint",
-			"hidden": "data.oauthTokenJson",
 			"newLine": true,
 			"xs": 12,
 			"sm": 12,

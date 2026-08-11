@@ -3,7 +3,6 @@
 	"pollInterval": "Intervalle d’interrogation (secondes)",
 	"pollIntervalHelp": "Durée minimale entre deux relevés de télémétrie BLUETTI. La première implémentation reste en lecture seule.",
 	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "Sélectionnez l’appareil à interroger. Nécessite une authentification préalable.",

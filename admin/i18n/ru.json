@@ -3,7 +3,6 @@
 	"pollInterval": "Интервал опроса (секунды)",
 	"pollIntervalHelp": "Минимальное время между опросами телеметрии BLUETTI. Первая реализация остается только для чтения.",
 	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "Выберите устройство для опроса. Требуется предварительная аутентификация.",

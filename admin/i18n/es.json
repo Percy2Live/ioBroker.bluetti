@@ -3,7 +3,6 @@
 	"pollInterval": "Intervalo de consulta (segundos)",
 	"pollIntervalHelp": "Tiempo mínimo entre consultas de telemetría BLUETTI. La primera implementación sigue siendo de solo lectura.",
 	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "Seleccione el dispositivo que desea sondear. Requiere autenticación previa.",

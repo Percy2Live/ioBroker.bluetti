@@ -3,7 +3,6 @@
 	"pollInterval": "Pollinginterval (seconden)",
 	"pollIntervalHelp": "Minimale tijd tussen BLUETTI-telemetrie-opvragingen. De eerste implementatie blijft alleen-lezen.",
 	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
 	"authenticateWithBluetti": "Authenticate with BLUETTI",
 	"deviceSelection": "BLUETTI device",
 	"deviceSelectionHelp": "Selecteer het apparaat om te pollen. Vereist voorafgaande authenticatie.",

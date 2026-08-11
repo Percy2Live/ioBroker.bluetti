@@ -17,7 +17,6 @@ import type { MockAdapter } from '@iobroker/testing/build/tests/unit/mocks/mockA
 
 interface TestConfig {
 	deviceSerial?: string;
-	oauthTokenJson?: string;
 	pollInterval?: number;
 	oauthClientId?: string;
 	oauthClientSecret?: string;
@@ -119,7 +118,11 @@ describe('Bluetti adapter lifecycle', () => {
 	});
 
 	it('does not start polling when authenticated but no device is selected', async () => {
-		const { adapter, database } = createAdapter({ oauthTokenJson: '{"access_token":"x"}', pollInterval: 30 });
+		const { adapter, database } = createAdapter({ pollInterval: 30 });
+
+		// Publish a valid token to the auth state (the token is now stored in a
+		// state, not in native config — see #140).
+		database.publishState('bluetti.0.auth.tokenJson', { val: '{"access_token":"x"}', ack: true });
 
 		await adapter.readyHandler!();
 
