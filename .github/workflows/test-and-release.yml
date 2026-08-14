@@ -57,7 +57,9 @@ jobs:
           build: true
 
   # Deploys the final package to NPM when a version tag is pushed.
-  # Requires npm trusted publishing for this repository.
+  # Uses the shared ioBroker deploy action (repochecker W3017). With no
+  # npm-token supplied it takes the npm trusted-publishing (OIDC) path,
+  # which upgrades to npm@11 and auto-attaches provenance attestations.
   deploy:
     needs: [check-and-lint, adapter-tests]
 
@@ -70,58 +72,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Write permissions are required to create Github releases
+    # id-token: write is required for npm trusted publishing (OIDC / provenance)
+    # contents: write is required to create the GitHub release
     permissions:
       id-token: write
       contents: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Use Node.js 24.x
-        uses: actions/setup-node@v7
+      - name: Deploy to npm (trusted publishing) and create GitHub release
+        uses: ioBroker/testing-action-deploy@v1
         with:
           node-version: '24.x'
-          cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Extract version from tag
-        shell: bash
-        id: extract_release
-        run: |
-          TAG_REF="${{ github.ref }}"
-          VERSION=${TAG_REF##*/v}
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAG_REF=$TAG_REF" >> $GITHUB_OUTPUT
-          EOF=$(od -An -N6 -x /dev/urandom | tr -d ' ')
-          BODY=$(git show -s --format=%b)
-          echo "BODY<<$EOF" >> $GITHUB_OUTPUT
-          echo "$BODY" >> $GITHUB_OUTPUT
-          echo "$EOF" >> $GITHUB_OUTPUT
-          if [[ $VERSION == *"-"* ]] ; then
-            echo "TAG=--tag next" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Upgrade npm to v11 for trusted publishing
-        run: npm install -g npm@11
-
-      - name: Publish to npm (trusted publishing / OIDC)
-        run: npm publish --provenance ${{ steps.extract_release.outputs.TAG }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.extract_release.outputs.TAG_REF }}
-          name: Release v${{ steps.extract_release.outputs.VERSION }}
-          draft: false
-          prerelease: ${{ contains(steps.extract_release.outputs.VERSION, '-') }}
-          body: ${{ steps.extract_release.outputs.BODY }}
+          build: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # npm-token intentionally omitted -> trusted-publishing (OIDC) path.
