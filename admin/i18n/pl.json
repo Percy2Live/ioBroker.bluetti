@@ -2,10 +2,9 @@
 	"bluetti adapter settings": "Ustawienia adaptera dla BLUETTI",
 	"pollInterval": "Interwał odpytywania (sekundy)",
 	"pollIntervalHelp": "Minimalny czas między odczytami telemetrii BLUETTI. Pierwsza implementacja pozostaje tylko do odczytu.",
-	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
-	"authenticateWithBluetti": "Authenticate with BLUETTI",
-	"deviceSelection": "BLUETTI device",
+	"authHeader": "Uwierzytelnianie BLUETTI",
+	"authenticateWithBluetti": "Uwierzytelnij się w BLUETTI",
+	"deviceSelection": "Urządzenie BLUETTI",
 	"deviceSelectionHelp": "Wybierz urządzenie do odpytywania. Wymaga wcześniejszego uwierzytelnienia.",
 	"deviceSelectionHint": "Najpierw uwierzytelnij się, aby wczytać listę urządzeń."
 }

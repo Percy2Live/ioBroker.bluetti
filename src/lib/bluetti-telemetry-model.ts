@@ -26,7 +26,7 @@ export type TelemetryValue = number | string | boolean;
 export const DEVICE_STATES: readonly TelemetryStateDef[] = [
 	{
 		id: 'device.model',
-		common: { name: 'Device model', type: 'string', role: 'info.name', read: true, write: false },
+		common: { name: 'Device model', type: 'string', role: 'info.model', read: true, write: false },
 	},
 	{ id: 'device.name', common: { name: 'Device name', type: 'string', role: 'info.name', read: true, write: false } },
 	{
@@ -62,7 +62,7 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 		common: {
 			name: 'Battery discharge time remaining',
 			type: 'number',
-			role: 'value.interval',
+			role: 'value',
 			unit: 'min',
 			min: 0,
 			read: true,
@@ -75,7 +75,7 @@ export const BATTERY_STATES: readonly TelemetryStateDef[] = [
 		common: {
 			name: 'Battery full-charge time remaining',
 			type: 'number',
-			role: 'value.interval',
+			role: 'value',
 			unit: 'min',
 			min: 0,
 			read: true,

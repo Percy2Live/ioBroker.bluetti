@@ -55,6 +55,8 @@ Other BLUETTI models that expose the same cloud API are likely to work but are n
 
 You only authenticate once — the token is kept encrypted in the `auth.tokenJson` state and refreshed in the background.
 
+> **Security note:** The OAuth token is stored in an encrypted ioBroker state (`auth.tokenJson`) with `read: false, write: false`. The encryption protects against casual exposure and backup/file-system access. Any ioBroker admin user can still read and decrypt the state via scripting or the REST API, since the encryption key is instance-wide. This is an accepted tradeoff: ioBroker admin users already have full system access, so the encrypted state does not weaken the overall security posture.
+
 If you need to override the built-in client credentials for expert/debug use, edit the instance's native object directly in ioBroker. The adapter still falls back to its shipped defaults when those native values are empty.
 
 ## 📊 Objects & states
@@ -143,11 +145,18 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+### 1.0.0
+
+- First stable release: full repochecker compliance, OIDC trusted publishing with provenance signing.
+- All pre-release repochecker findings resolved (#103–#107, #123, #124).
+- Object structure dump validated and attached to ioBroker repository submission (#108).
+- Adapter submitted to ioBroker latest repository (#81).
+
 ### 0.0.2
 
 - Trusted publishing setup: OIDC-based npm publish with provenance signing, registry-url and npm 11 in CI.
 - Populate `device.model` and `device.name` from `getUserProducts` cache; resolve `workMode` labels via `supportModeValues`.
-- Device selector always visible (removed broken `authStatus`-based `hidden` logic); empty list signals unauthenticated state.
+- Device selector always visible; empty list signals unauthenticated state.
 - Degrade gracefully when persisted OAuth token is corrupt instead of crashing the adapter.
 - Refresh device list after OAuth completes without reopening the config dialog.
 - Redact device serial in info-level polling log line.

@@ -19,7 +19,7 @@ import {
 } from './lib/bluetti-oauth-flow';
 import { BluettiOAuthTokenClient } from './lib/bluetti-oauth-token-client';
 import { BluettiPollRunner } from './lib/bluetti-poll-runner';
-import { BluettiPollingPolicy, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
+import { BluettiPollingPolicy, MIN_POLL_INTERVAL_MS, type BluettiPollingHealth } from './lib/bluetti-polling-policy';
 import {
 	BluettiStoredTokenProvider,
 	BluettiStoredTokenProviderError,
@@ -45,6 +45,15 @@ interface PendingOAuthCredentials {
 // so persisting a refreshed token to native would restart the adapter on every token
 // rotation (and refresh runs whenever the token is near expiry). States can be written
 // freely without a restart. The value is encrypted with this.encrypt() at rest.
+//
+// Security note: the state is declared with read:false/write:false so it does not
+// appear in the Admin object tree, and the value is encrypted via this.encrypt()
+// (instance-wide key). This protects against casual exposure and backup/file-system
+// access. However, any ioBroker admin user can still read the raw state value via
+// scripting or the REST API and decrypt it, since the encryption key is shared across
+// the ioBroker instance. This is an accepted tradeoff: ioBroker admin users already
+// have full system access (filesystem, database, other adapters), so the encrypted
+// state does not weaken the overall security posture. See #141.
 const TOKEN_STATE_ID = 'auth.tokenJson';
 
 class Bluetti extends utils.Adapter {
@@ -106,19 +115,11 @@ class Bluetti extends utils.Adapter {
 		});
 	}
 
-	// Loads the stored OAuth token from the auth state (decrypting it). Falls back to a
-	// legacy token in native config (pre-#42 storage) and migrates it into the state, so
-	// an already-authenticated user does not have to log in again after upgrading.
+	// Loads the stored OAuth token from the auth state (decrypting it).
 	private async loadStoredToken(): Promise<string> {
 		const state = await this.getStateAsync(TOKEN_STATE_ID);
 		if (typeof state?.val === 'string' && state.val) {
 			return this.decrypt(state.val);
-		}
-
-		const legacy = (this.config.oauthTokenJson ?? '').trim();
-		if (legacy) {
-			await this.persistTokenJson(legacy);
-			return legacy;
 		}
 
 		return '';
@@ -173,7 +174,11 @@ class Bluetti extends utils.Adapter {
 
 		await this.cacheDeviceMetadata(provider, deviceSerial);
 
-		const policy = new BluettiPollingPolicy({ basePollIntervalMs: Math.round(this.config.pollInterval * 1000) });
+		const pollIntervalMs = Math.min(
+			Math.max(Math.round(this.config.pollInterval * 1000), MIN_POLL_INTERVAL_MS),
+			86_400_000,
+		);
+		const policy = new BluettiPollingPolicy({ basePollIntervalMs: pollIntervalMs });
 
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
 			policy,
@@ -335,9 +340,6 @@ class Bluetti extends utils.Adapter {
 				case 'oauth2Callback':
 					this.sendMessageResponse(message, await this.handleOAuthCallback(message.message));
 					break;
-				case 'getAuthStatus':
-					this.sendMessageResponse(message, this.createAuthStatusResponse());
-					break;
 				case 'getDevices':
 					this.sendMessageResponse(message, await this.handleGetDevices());
 					break;
@@ -428,7 +430,7 @@ class Bluetti extends utils.Adapter {
 
 	// Lists the BLUETTI devices bound to the authenticated account for the
 	// jsonConfig device selector. Returns an empty list (never an error) so a
-	// missing/expired login just yields no options instead of flipping authStatus.
+	// missing/expired login just yields no options instead of an error.
 	private async handleGetDevices(): Promise<BluettiDeviceSelectItem[]> {
 		try {
 			const provider = new BluettiCloudProvider({ tokenProvider: this.createStoredTokenProvider() });
@@ -438,12 +440,6 @@ class Bluetti extends utils.Adapter {
 			this.log.warn(`BLUETTI device list unavailable: ${extractSafeErrorMessage(error)}`);
 			return [];
 		}
-	}
-
-	private createAuthStatusResponse(): { text: string } {
-		return {
-			text: this.oauthTokenJson ? 'authenticated' : 'not_authenticated',
-		};
 	}
 
 	private sendMessageResponse(message: ioBroker.Message, response: unknown): void {
