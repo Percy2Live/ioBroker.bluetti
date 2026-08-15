@@ -2,10 +2,9 @@
 	"bluetti adapter settings": "BLUETTI 适配器设置",
 	"pollInterval": "轮询间隔（秒）",
 	"pollIntervalHelp": "BLUETTI 遥测轮询之间的最短时间。初始实现仍为只读。",
-	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
-	"authenticateWithBluetti": "Authenticate with BLUETTI",
-	"deviceSelection": "BLUETTI device",
+	"authHeader": "BLUETTI 身份验证",
+	"authenticateWithBluetti": "通过 BLUETTI 进行身份验证",
+	"deviceSelection": "BLUETTI 设备",
 	"deviceSelectionHelp": "选择要轮询的设备。需要事先进行身份验证。",
 	"deviceSelectionHint": "请先进行身份验证以加载设备列表。"
 }

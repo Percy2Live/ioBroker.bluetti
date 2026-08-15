@@ -1,7 +1,7 @@
 {
 	"common": {
 		"name": "bluetti",
-		"version": "0.0.2",
+		"version": "1.0.0",
 		"news": {
 			"0.0.1": {
 				"en": "initial release",
@@ -28,6 +28,19 @@
 				"pl": "Zaufane publikowanie z podpisem pochodzenia przez CI",
 				"uk": "Довірена публікація з підписом походження через CI",
 				"zh-cn": "通过 CI 进行可信发布并带有来源签名"
+			},
+			"1.0.0": {
+				"en": "First stable release with full repochecker compliance and OIDC trusted publishing",
+				"de": "Erstes stabiles Release mit voller Repochecker-Konformität und OIDC Trusted Publishing",
+				"ru": "Первый стабильный выпуск с полным соответствием repochecker и OIDC trusted publishing",
+				"pt": "Primeiro lançamento estável com conformidade total do repochecker e OIDC trusted publishing",
+				"nl": "Eerste stabiele release met volledige repochecker-naleving en OIDC trusted publishing",
+				"fr": "Première version stable avec conformité repochecker complète et OIDC trusted publishing",
+				"it": "Primo rilascio stabile con piena conformità repochecker e OIDC trusted publishing",
+				"es": "Primer lanzamiento estable con cumplimiento completo de repochecker y OIDC trusted publishing",
+				"pl": "Pierwsze stabilne wydanie z pełną zgodnością repochecker i OIDC trusted publishing",
+				"uk": "Перший стабільний випуск з повною відповідністю repochecker та OIDC trusted publishing",
+				"zh-cn": "首个稳定版本，完全符合 repochecker 和 OIDC 可信发布"
 			}
 		},
 		"titleLang": {
@@ -97,15 +110,12 @@
 			}
 		],
 		"messagebox": true,
-		"nogit": true
+		"noGit": true
 	},
 	"native": {
 		"pollInterval": 300,
 		"oauthClientId": "",
 		"oauthClientSecret": "",
-		"oauthTokenJson": "",
-		"oauthLastRefresh": "",
-		"authStatus": "not_authenticated",
 		"deviceSerial": ""
 	},
 	"objects": [],
@@ -167,11 +177,9 @@
 		}
 	],
 	"protectedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
+		"oauthClientSecret"
 	],
 	"encryptedNative": [
-		"oauthClientSecret",
-		"oauthTokenJson"
+		"oauthClientSecret"
 	]
 }

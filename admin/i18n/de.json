@@ -3,7 +3,6 @@
 	"pollInterval": "Abfrageintervall (Sekunden)",
 	"pollIntervalHelp": "Mindestabstand zwischen BLUETTI-Telemetrieabfragen. Die erste Implementierung bleibt read-only.",
 	"authHeader": "BLUETTI-Authentifizierung",
-	"authStatus": "Authentifizierungsstatus",
 	"authenticateWithBluetti": "Mit BLUETTI authentifizieren",
 	"deviceSelection": "BLUETTI-Gerät",
 	"deviceSelectionHelp": "Gerät für die Abfrage auswählen. Erfordert vorherige Authentifizierung.",

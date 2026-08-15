@@ -2,10 +2,9 @@
 	"bluetti adapter settings": "Налаштування адаптера для BLUETTI",
 	"pollInterval": "Інтервал опитування (секунди)",
 	"pollIntervalHelp": "Мінімальний час між опитуваннями телеметрії BLUETTI. Перша реалізація залишається лише для читання.",
-	"authHeader": "BLUETTI authentication",
-	"authStatus": "Authentication status",
-	"authenticateWithBluetti": "Authenticate with BLUETTI",
-	"deviceSelection": "BLUETTI device",
+	"authHeader": "Автентифікація BLUETTI",
+	"authenticateWithBluetti": "Автентифікуватися в BLUETTI",
+	"deviceSelection": "Пристрій BLUETTI",
 	"deviceSelectionHelp": "Виберіть пристрій для опитування. Потрібна попередня автентифікація.",
 	"deviceSelectionHint": "Спочатку пройдіть автентифікацію, щоб завантажити список пристроїв."
 }

@@ -7,10 +7,18 @@ export const BLUETTI_OAUTH_AUTHORIZE_PATH = '/oauth2/grant';
 export const BLUETTI_OAUTH_TOKEN_PATH = '/oauth2/token';
 
 // BLUETTI's SSO does not issue per-user OAuth clients. The official BLUETTI Home
-// Assistant integration ships a single fixed client, and the same credentials work
-// against the /oauth2/grant + /oauth2/token endpoints this adapter targets. Use them
-// as the default so users don't have to supply credentials they cannot obtain; the
-// admin config still allows overriding both (see #34).
+// Assistant integration (bluetti-official/bluetti-home-assistant, MIT-licensed)
+// ships a single fixed client credential pair — ClientCredential("HomeAssistant",
+// "SG9tZUFzc2lzdGFudA==") — published openly in its config_flow.py. The same
+// credentials work against the /oauth2/grant + /oauth2/token endpoints this adapter
+// targets, so they are used as the default so users don't have to supply credentials
+// they cannot obtain. The admin config still allows overriding both (see #34).
+//
+// This is an OAuth 2.0 "public client" pattern: BLUETTI's SSO has no client
+// confidentiality for non-web first-party apps, so the client secret is not a
+// private key — it is a shared community credential already publicly available
+// in the upstream HA integration source code. It cannot be rotated per-installation
+// and is not treated as sensitive by the upstream provider.
 //
 // The secret is the literal string HA passes to the token endpoint. It looks like
 // base64 but must be sent verbatim — decoding it to "HomeAssistant" is what caused

@@ -14,7 +14,7 @@
 > - **The rotating OAuth token is stored in an encrypted state (`auth.tokenJson`), not in native
 >   config.** Every write to `system.adapter.<ns>` restarts the instance, so persisting the token
 >   (or transient auth status) to native caused restart loops on login and on every token refresh.
->   `authStatus` is derived live from token presence; `oauthLastRefresh` was dropped.
+>   The legacy native fields `oauthTokenJson`, `oauthLastRefresh`, and `authStatus` were removed in #140.
 > - **The dynamic ioBroker Admin callback URL works.** BLUETTI accepts it at both authorize and
 >   token steps; there is no fixed redirect-URI whitelist for this client.
 > - **The token exchange uses a standard form body** (client_id/secret in the body, no Basic auth,
@@ -126,18 +126,29 @@ State handling rules:
 
 ## Token storage
 
-Store token data in adapter native config fields declared as both encrypted and protected in `io-package.json`.
-
-Proposed native fields:
+Store token data in the encrypted `auth.tokenJson` state, not in native config fields.
 
 | Field | Sensitive | Purpose |
 |---|---:|---|
-| `oauthTokenJson` | yes | JSON string containing token response: access token, refresh token, created/expires fields |
-| `oauthLastRefresh` | no | Timestamp of the last refresh attempt/success for throttling |
-| `deviceSerial` | partly | Serial of the selected device used for polling and bindDevices |
-| `authStatus` | no | Last high-level auth state for Admin display |
+| `auth.tokenJson` (state) | yes | JSON string containing token response: access token, refresh token, created/expires fields |
+| `deviceSerial` (native) | partly | Serial of the selected device used for polling and bindDevices |
 
-`oauthTokenJson` must be in `encryptedNative` and `protectedNative`.
+`auth.tokenJson` is encrypted with `this.encrypt()` and stored as an ioBroker state to avoid adapter restarts on token rotation.
+
+### Security assessment (#141)
+
+The `auth.tokenJson` state is declared with `read: false, write: false` and its value is encrypted via `this.encrypt()`. This protects against:
+
+- Casual exposure in the Admin UI object tree (hidden from view)
+- Backup leaks and direct file-system access (encrypted at rest)
+
+It does **not** protect against an ioBroker admin user, who can read the raw state value via scripting or the REST API and decrypt it using the instance-wide encryption key. This is an accepted tradeoff:
+
+- ioBroker admin users already have full system access (file system, database, other adapters, native config).
+- Moving the token to `encryptedNative` would reintroduce the adapter restart loop on every token refresh (each native-config write triggers a js-controller restart), which was the exact problem fixed by moving tokens to a state in #140.
+- Storing the token in the file system would lose ioBroker's built-in encryption and complicate debugging.
+
+The encrypted state is the correct ioBroker-idiomatic approach for rotating tokens that must not trigger adapter restarts.
 
 Device serials are not OAuth secrets but can identify the user's hardware. They should not be logged in full. Whether to encrypt them is a product decision; protecting them is reasonable.
 
@@ -147,7 +158,7 @@ Persisting refreshed token data requires updating the instance object, not only 
 
 On adapter start:
 
-1. Read and parse encrypted `oauthTokenJson` from `this.config`.
+1. Read and parse the encrypted `auth.tokenJson` state.
 2. If missing, set `info.connection = false` and auth status to `not_authenticated`; do not poll.
 3. Compute validity using:
    - `expires_at - 30s`, or
@@ -209,7 +220,7 @@ Auth, cloud, and device failures must remain separate because outage-health stat
    - This helper is intentionally not wired into `main.ts` yet.
 
 2. **Token manager without polling lifecycle**
-   - `src/lib/bluetti-stored-token-provider.ts` parses encrypted `oauthTokenJson`, exposes the existing `BluettiTokenProvider` interface, and stays independent from `main.ts`.
+   - `src/lib/bluetti-stored-token-provider.ts` parses the stored token JSON, exposes the existing `BluettiTokenProvider` interface, and stays independent from `main.ts`.
    - It supports `expires_at` and `created_at + expires_in`, a 30-second expiry buffer, explicit `markTokenExpired()`, refresh throttling after failures, refresh-token retention when BLUETTI omits a new refresh token, and a persistence callback for refreshed token JSON.
    - Unit tests cover expiry calculation, refresh, persistence, refresh throttling, malformed stored data, retained refresh tokens, and redaction.
 
@@ -220,9 +231,9 @@ Auth, cloud, and device failures must remain separate because outage-health stat
    - The request shape is source-backed by the Home Assistant integration and OAuth conventions; the post-login exchange still needs a live ioBroker callback test.
 
 4. **Admin auth configuration and callback wiring**
-   - `admin/jsonConfig.json` has an auth-status textSendTo field and a one-button `sendTo` auth flow for `getOAuthStartLink`; no client-id/client-secret inputs are shown anymore.
-   - `io-package.json` enables `messagebox` and stores `oauthClientSecret`/`oauthTokenJson` as protected and encrypted native fields.
-   - `src/main.ts` handles `getOAuthStartLink`, `oauth2Callback`, and `getAuthStatus`, persists token JSON server-side, and does not return token material to Admin responses.
+   - `admin/jsonConfig.json` has a one-button `sendTo` auth flow for `getOAuthStartLink`; no client-id/client-secret inputs are shown anymore.
+   - `io-package.json` enables `messagebox` and stores `oauthClientSecret` as a protected and encrypted native field.
+   - `src/main.ts` handles `getOAuthStartLink`, `oauth2Callback`, and `getDevices`, persists token JSON server-side in the `auth.tokenJson` state, and does not return token material to Admin responses.
    - Device discovery/selection is still intentionally not wired.
 
 5. **Admin device selection**

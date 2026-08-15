@@ -26,8 +26,8 @@ describe('bluetti telemetry model', () => {
 		it('defines the added EL30V2 telemetry states with correct type/role/unit', () => {
 			const byId = new Map(TELEMETRY_STATES.map(s => [s.id, s.common]));
 			const expectations: Record<string, { type: string; role: string; unit?: string }> = {
-				'battery.dischargeRemaining': { type: 'number', role: 'value.interval', unit: 'min' },
-				'battery.chargeRemaining': { type: 'number', role: 'value.interval', unit: 'min' },
+				'battery.dischargeRemaining': { type: 'number', role: 'value', unit: 'min' },
+				'battery.chargeRemaining': { type: 'number', role: 'value', unit: 'min' },
 				'power.acOutputActive': { type: 'boolean', role: 'indicator' },
 				'power.dcOutputActive': { type: 'boolean', role: 'indicator' },
 				'power.acEco': { type: 'boolean', role: 'indicator' },
