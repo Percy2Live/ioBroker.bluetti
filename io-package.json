@@ -110,7 +110,7 @@
 			}
 		],
 		"messagebox": true,
-		"noGit": true
+		"nogit": true
 	},
 	"native": {
 		"pollInterval": 300,
