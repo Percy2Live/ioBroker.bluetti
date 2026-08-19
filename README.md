@@ -161,7 +161,7 @@ Architecture and research notes:
 - Refresh device list after OAuth completes without reopening the config dialog.
 - Redact device serial in info-level polling log line.
 - Repo cleanup: remove non-adapter files, redundant `publishConfig`, and GitHub/npm install instructions from README.
-- Remove `prepare` lifecycle script and set `common.noGit` to suppress repochecker warnings.
+- Remove `prepare` lifecycle script and set `common.nogit` to suppress repochecker warnings.
 - Add local repochecker audit results and prepare `ioBroker.repositories` submission entry.
 
 ### 0.0.1
