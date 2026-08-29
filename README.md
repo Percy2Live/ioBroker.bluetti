@@ -145,6 +145,10 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+
+### **WORK IN PROGRESS**
+- (ioBroker-Bot) Adapter requires admin >= 7.8.23 now.
+
 ### 1.0.0
 
 - First stable release: full repochecker compliance, OIDC trusted publishing with provenance signing.
