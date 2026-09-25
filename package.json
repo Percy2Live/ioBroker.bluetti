@@ -1,6 +1,6 @@
 {
   "name": "iobroker.bluetti",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "BLUETTI power station telemetry",
   "author": {
     "name": "Percy2Live",
