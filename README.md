@@ -147,6 +147,7 @@ Architecture and research notes:
 <!-- markdownlint-disable-next-line MD024 -->
 
 ### **WORK IN PROGRESS**
+- Fixed polling stopping permanently after a single stuck poll: a hung request or state write could block the poll loop before it rescheduled, leaving the instance alive but silently not fetching. A per-cycle watchdog now abandons a stuck poll and reschedules with backoff (#171).
 - (ioBroker-Bot) Adapter requires admin >= 7.8.23 now.
 
 ### 1.0.0
