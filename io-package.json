@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "bluetti",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "news": {
+      "1.0.1": {
+        "en": "Fixed polling stopping permanently after a single stuck poll: a hung request or state write could block the poll loop before it rescheduled, leaving the instance alive but silently not fetching. A per-cycle watchdog now abandons a stuck poll and reschedules with backoff (#171).\nAdapter requires admin >= 7.8.23 now.",
+        "de": "Polling blieb nach einem einzelnen hängenden Poll dauerhaft stehen: Ein hängender Request oder State-Write konnte die Poll-Schleife vor dem Neuplanen blockieren, sodass die Instanz zwar lief, aber still nichts mehr abfragte. Ein Cycle-Watchdog bricht einen hängenden Poll nun ab und plant ihn mit Backoff neu (#171).\nAdapter benötigt jetzt admin >= 7.8.23.",
+        "ru": "Исправлена ошибка, из-за которой опрос постоянно останавливался после одного зависшего опроса: зависший запрос или запись состояния могли заблокировать цикл опроса до его переноса, в результате чего инстанция оставалась в рабочем состоянии, но не могла быть загружена. Орган, наблюдающий за каждым циклом опроса, теперь отменяет результаты голосования, откладывая его на более поздний срок (#171).\nТеперь для адаптера требуется администратор >= 7.8.23.",
+        "pt": "Corrigida a interrupção permanente de uma enquete: uma solicitação suspensa ou escrita em estado bloqueava o ciclo antes de ser reagendada, deixando a instância ativa, mas sem busca. Um vigilante por ciclo agora abandona uma enquete paralisada (#171).\nAgora o adaptador exige admin >= 7.8.23.",
+        "nl": "Het probleem is opgelost dat de peiling definitief werd stopgezet na een enkele vastgelopen peiling: een verzoek dat vastloopt of door de staat wordt geschreven, kan de enquête worden geblokkeerd voordat deze opnieuw wordt gepland, waardoor de instantie in leven blijft maar stilletjes niet wordt opgehaald. Een waakhond per cyclus verlaat nu een vastgelopen peiling en maakt een nieuwe afspraak met een terugval (#171).\nVoor de adapter is nu admin >= 7.8.23 vereist.",
+        "fr": "Correction d'un arrêt définitif après un seul sondage bloqué : une requête bloquée ou une écriture d'état bloquait la boucle du sondage avant sa reprogrammation, laissant l'instance active sans la récupérer. Un observateur par cycle abandonne un sondage bloqué et le reporte avec retard (#171).\nAdapter nécessite admin >= 7.8.23.",
+        "it": "Risolto il problema del polling che si interrompeva definitivamente dopo un singolo sondaggio bloccato: una richiesta bloccata o uno stato poteva bloccare il ciclo prima di riprogrammarlo. Un watchdog per ciclo ora abbandona un sondaggio bloccato e riprogramma (#171).\nAdapter richiede admin >= 7.8.23 ora.",
+        "es": "Se ha corregido que las encuestas se detengan permanentemente tras una sola encuesta estancada: una solicitud colgada o estatal podía bloquear el ciclo de votación antes de que se reprogramara, dejando la instancia viva, pero sin éxito. Un organismo de control por ciclo abandona ahora una encuesta estancada y la reprograma (#171).\nEl adaptador ahora necesita admin >= 7.8.23",
+        "pl": "Naprawiono trwale zatrzymanie sondażu po jednej zablokowanej ankiecie: zawieszona prośba lub pisanie stanu mogło zablokować pętlę ankiety przed zmianą harmonogramu, pozostawiając instancję żywą, ale po cichu nie pobierając. Strażnik na cykl porzuca teraz zablokowaną ankietę i zmienia harmonogram za pomocą backoff (#171).\nAdapter wymaga teraz administratora >= 7.8.23.",
+        "uk": "Виправлено остаточне припинення опитування після одного застряглого опитування: завислий запит або запис стану може заблокувати цикл опитування до його перенесення, залишаючи екземпляр живим, але мовчки не завантажуватись. Спостерігач за циклом тепер відмовляється від застряглого опитування та переносить плани з відходом (#171).\nАдаптер вимагає адміністратора >= 7.8.23 зараз.",
+        "zh-cn": "修复了轮询在单次停滞后永久停止的问题：挂起的请求或状态写入可能会在重新安排轮询循环之前阻塞轮询循环，使实例处于活动状态但静默地无法提取。每个周期的监管机构现在会放弃停滞的投票，并通过退避来重新安排时间 (#171)。\n适配器现在需要管理员 >= 7.8.23。"
+      },
       "0.0.1": {
         "en": "initial release",
         "de": "Erstveröffentlichung",
