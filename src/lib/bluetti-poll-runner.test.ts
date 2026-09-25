@@ -40,6 +40,7 @@ async function flush(): Promise<void> {
 function makeHarness(
 	runPoll: () => Promise<void>,
 	classifyError: (e: unknown) => BluettiCloudErrorKind = () => 'network',
+	pollTimeoutMs?: number,
 ) {
 	const timers: ScheduledTimer[] = [];
 	const cleared: number[] = [];
@@ -50,6 +51,7 @@ function makeHarness(
 		runPoll,
 		classifyError,
 		policy,
+		pollTimeoutMs,
 		setTimer: (callback: () => void, delayMs: number) => {
 			timers.push({ callback, delayMs });
 			return timers.length - 1;
@@ -66,6 +68,7 @@ function makeHarness(
 	});
 	return {
 		runner,
+		policy,
 		timers,
 		cleared,
 		failures,
@@ -163,5 +166,66 @@ describe('BluettiPollRunner', () => {
 
 		h.runner.stop();
 		expect(h.cleared).to.have.length(1);
+	});
+
+	it('reschedules via the watchdog when a poll never settles', async () => {
+		// The poll hangs forever: no throw, no resolve. Without a watchdog the
+		// finally-based reschedule can never run and the loop wedges (issue #171).
+		const gate = deferred<void>();
+		const h = makeHarness(
+			() => gate.promise,
+			() => 'network',
+			45_000,
+		);
+
+		h.runner.start();
+		await flush();
+		// Only the watchdog is armed; no reschedule yet while the poll is in flight.
+		expect(h.timers).to.have.length(1);
+		expect(h.timers[0].delayMs).to.equal(45_000);
+		expect(h.failures).to.deep.equal([]);
+
+		// Watchdog fires: the stuck cycle is abandoned and treated as a timeout.
+		h.timers[0].callback();
+		await flush();
+
+		expect(h.failures).to.deep.equal(['timeout']);
+		// Next poll scheduled with backoff for one consecutive failure: 30_000 * 2^1.
+		expect(h.timers).to.have.length(2);
+		expect(h.timers[1].delayMs).to.equal(60_000);
+	});
+
+	it('clears the watchdog when the poll completes in time', async () => {
+		const h = makeHarness(
+			() => Promise.resolve(),
+			() => 'network',
+			45_000,
+		);
+		h.runner.start();
+		await flush();
+
+		expect(h.successCount).to.equal(1);
+		// Watchdog (handle 0) armed then cleared; next poll (handle 1) scheduled.
+		expect(h.cleared).to.deep.equal([0]);
+		expect(h.timers[1].delayMs).to.equal(30_000);
+	});
+
+	it('does not double-reschedule when an abandoned poll settles late', async () => {
+		const gate = deferred<void>();
+		const h = makeHarness(
+			() => gate.promise,
+			() => 'network',
+			45_000,
+		);
+		h.runner.start();
+		await flush();
+		h.timers[0].callback(); // watchdog fires -> reschedule
+		await flush();
+		expect(h.timers).to.have.length(2);
+
+		// The abandoned poll finally settles: it must not schedule a second poll.
+		gate.resolve();
+		await flush();
+		expect(h.timers).to.have.length(2);
 	});
 });

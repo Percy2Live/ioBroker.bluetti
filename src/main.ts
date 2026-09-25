@@ -56,6 +56,14 @@ interface PendingOAuthCredentials {
 // state does not weaken the overall security posture. See #141.
 const TOKEN_STATE_ID = 'auth.tokenJson';
 
+// Hard ceiling for a single poll cycle handed to the poll runner. Comfortably
+// above the worst-case network path (a token refresh plus a device-states fetch,
+// each capped at the 15 s request timeout) with headroom for the state writes, so
+// legitimate slow polls are never aborted. If a request or state write hangs past
+// this, the runner abandons the cycle and reschedules, so a single stuck poll can
+// never permanently stop polling. See #171.
+const POLL_WATCHDOG_MS = 60_000;
+
 class Bluetti extends utils.Adapter {
 	private oauthFlow?: BluettiOAuthFlow;
 	private readonly pendingOAuthCredentials = new Map<string, PendingOAuthCredentials>();
@@ -182,6 +190,7 @@ class Bluetti extends utils.Adapter {
 
 		this.pollRunner = new BluettiPollRunner<ioBroker.Timeout | undefined>({
 			policy,
+			pollTimeoutMs: POLL_WATCHDOG_MS,
 			runPoll: async () => {
 				const products = await provider.getDeviceStates(deviceSerial);
 				const product = products.find(candidate => candidate.sn === deviceSerial) ?? products[0];

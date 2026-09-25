@@ -15,6 +15,13 @@ export interface BluettiPollRunnerOptions<THandle = unknown> {
 	clearTimer: (handle: THandle) => void;
 	onSuccess?: () => void | Promise<void>;
 	onFailure?: (kind: BluettiCloudErrorKind, error: unknown) => void | Promise<void>;
+	// Hard ceiling for a single poll cycle (poll plus success/failure handling).
+	// A cycle that does not settle within this window — a hung request or a
+	// stalled state write — is abandoned and treated as a 'timeout' failure, so
+	// the next poll is always rescheduled. This guarantees that no single stuck
+	// poll can permanently stop the loop. Omit or set <= 0 to disable the
+	// watchdog (used by the deterministic unit tests).
+	pollTimeoutMs?: number;
 }
 
 /**
@@ -42,7 +49,7 @@ export class BluettiPollRunner<THandle = unknown> {
 			return;
 		}
 		this.active = true;
-		void this.tick();
+		this.tick();
 	}
 
 	// Stop the loop and cancel any pending timer. An in-flight poll finishes but
@@ -61,16 +68,56 @@ export class BluettiPollRunner<THandle = unknown> {
 		}
 		this.timer = this.options.setTimer(() => {
 			this.timer = undefined;
-			void this.tick();
+			this.tick();
 		}, this.options.policy.nextDelayMs());
 	}
 
-	private async tick(): Promise<void> {
+	private tick(): void {
 		// Overlap guard: never run two polls concurrently.
 		if (this.polling) {
 			return;
 		}
 		this.polling = true;
+
+		// Reschedule exactly once per tick, whichever comes first: the cycle
+		// settling, or the watchdog abandoning a stuck cycle. A `finally` only
+		// covers a thrown error; it cannot rescue a poll or state write that
+		// hangs and never settles, which would leave the loop wedged forever.
+		let rescheduled = false;
+		let watchdog: THandle | undefined;
+		const reschedule = (): void => {
+			if (rescheduled) {
+				return;
+			}
+			rescheduled = true;
+			if (watchdog !== undefined) {
+				this.options.clearTimer(watchdog);
+				watchdog = undefined;
+			}
+			this.polling = false;
+			this.scheduleNext();
+		};
+
+		const timeoutMs = this.options.pollTimeoutMs;
+		if (timeoutMs !== undefined && timeoutMs > 0) {
+			watchdog = this.options.setTimer(() => {
+				watchdog = undefined;
+				// The cycle exceeded its budget: a request or state write is hung
+				// and the cycle promise may never settle. Record a timeout so
+				// backoff applies, then abandon it and reschedule. onFailure is
+				// fire-and-forget here so a stalled state write cannot re-wedge us.
+				this.options.policy.recordFailure('timeout');
+				void this.options.onFailure?.('timeout', new Error('BLUETTI poll cycle timed out'));
+				reschedule();
+			}, timeoutMs);
+		}
+
+		// runCycle never rejects (it handles its own errors), but attach to both
+		// settle paths defensively so the reschedule always runs.
+		void this.runCycle().then(reschedule, reschedule);
+	}
+
+	private async runCycle(): Promise<void> {
 		try {
 			await this.options.runPoll();
 			this.options.policy.recordSuccess();
@@ -79,9 +126,6 @@ export class BluettiPollRunner<THandle = unknown> {
 			const kind = this.options.classifyError(error);
 			this.options.policy.recordFailure(kind);
 			await this.options.onFailure?.(kind, error);
-		} finally {
-			this.polling = false;
-			this.scheduleNext();
 		}
 	}
 }
