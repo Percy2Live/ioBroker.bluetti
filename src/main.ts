@@ -221,6 +221,16 @@ class Bluetti extends utils.Adapter {
 		);
 	}
 
+	// Stops the current poll loop (if any) and starts a fresh one. Used after a
+	// re-authentication so the rebuilt token provider picks up the new token without
+	// requiring an instance restart (see #175). Stopping first prevents two
+	// concurrent poll loops; startPolling() stays a no-op when auth/device are missing.
+	private async restartPolling(): Promise<void> {
+		this.pollRunner?.stop();
+		this.pollRunner = undefined;
+		await this.startPolling();
+	}
+
 	// Creates the centralized read-only telemetry objects (channels + states) if
 	// they do not exist yet.
 	private async ensureTelemetryObjects(): Promise<void> {
@@ -414,6 +424,13 @@ class Bluetti extends utils.Adapter {
 		});
 		const token = await tokenClient.exchangeAuthorizationCode(callback.code, pendingCredentials.callbackUrl);
 		await this.persistTokenJson(stringifyToken(token));
+
+		// Re-initialise the poll loop so the freshly stored token takes effect
+		// immediately. persistTokenJson only updates the in-memory JSON + encrypted
+		// state; the running pollRunner still holds the token provider built with the
+		// previous token at startup, so without this a re-auth would have no effect
+		// until the next instance restart (see #175).
+		await this.restartPolling();
 
 		return {
 			result: 'authenticated',

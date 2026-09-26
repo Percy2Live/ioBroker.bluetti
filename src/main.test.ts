@@ -131,6 +131,90 @@ describe('Bluetti adapter lifecycle', () => {
 		expect(database.getState('bluetti.0.info.connection')!.val).to.equal(false);
 	});
 
+	it('re-authentication rebuilds the poll loop with the new token, no restart required (#175)', async () => {
+		// A running poll loop is built once at startup from the stored token. After a
+		// re-auth the new token is only written to the auth state + in-memory JSON, so
+		// the loop must be re-initialised or it keeps using the stale token forever.
+		type ReauthInternals = {
+			handleGetOAuthStartLink(payload: unknown): { openUrl: string };
+			handleOAuthCallback(payload: unknown): Promise<{ result: string }>;
+			pollRunner?: { stop(): void };
+		};
+
+		const seen: { url: string; auth: string | null }[] = [];
+		const json = (body: unknown): Promise<Response> =>
+			Promise.resolve(
+				new Response(JSON.stringify(body), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+			);
+		const device = { sn: 'BX-123456', online: '1', isBindByCurUser: '1', stateList: [] };
+
+		const fetchStub = sinon.stub(globalThis, 'fetch');
+		fetchStub.callsFake((input, init) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+			seen.push({ url, auth: new Headers(init?.headers).get('authorization') });
+
+			if (url.includes('/oauth2/token')) {
+				// Authorization-code exchange returns the new token B.
+				return json({
+					access_token: 'TOKEN_B',
+					refresh_token: 'rB',
+					token_type: 'bearer',
+					expires_in: 2_678_391,
+				});
+			}
+			if (url.includes('/deviceStates')) {
+				return json({ msgCode: 0, message: 'OK', data: [device] });
+			}
+			if (url.includes('/devices')) {
+				return json({ msgCode: 0, message: 'OK', data: [{ ...device, name: 'Home', model: 'AC300' }] });
+			}
+			// bindDevices
+			return json({ msgCode: 0, message: 'OK', data: null });
+		});
+
+		try {
+			const { adapter, database } = createAdapter({ deviceSerial: 'BX-123456', pollInterval: 30 });
+			// The @iobroker/testing mock does not implement the adapter timer helpers,
+			// which the poll loop needs once it actually starts. Wire minimal stubs; the
+			// reschedule setTimer is a no-op so no real timer leaks past the test.
+			(adapter as unknown as { setTimeout: () => unknown }).setTimeout = () => undefined;
+			(adapter as unknown as { clearTimeout: () => void }).clearTimeout = () => undefined;
+			// Token A is already stored: the initial poll loop binds with TOKEN_A.
+			database.publishState('bluetti.0.auth.tokenJson', {
+				val: '{"access_token":"TOKEN_A","refresh_token":"rA","token_type":"bearer","expires_in":2678391}',
+				ack: true,
+			});
+
+			await adapter.readyHandler!();
+
+			const internal = adapter as unknown as ReauthInternals;
+
+			// Simulate the admin OAuth flow: start link (arms the pending state) then callback.
+			const start = internal.handleGetOAuthStartLink({ adminOrigin: 'http://localhost:8081' });
+			const state = new URL(start.openUrl).searchParams.get('state');
+			const result = await internal.handleOAuthCallback({ state, code: 'auth-code-xyz' });
+			expect(result.result).to.equal('authenticated');
+
+			// Stop the (rebuilt) loop so no detached poll timer leaks past the test.
+			internal.pollRunner?.stop();
+
+			const binds = seen.filter(entry => entry.url.includes('/bindDevices'));
+			expect(
+				binds.length,
+				'device is (re)bound on both the initial start and the re-auth',
+			).to.be.greaterThanOrEqual(2);
+			expect(binds[0].auth, 'initial poll loop uses the pre-auth token').to.equal('TOKEN_A');
+			expect(binds[binds.length - 1].auth, 're-auth must rebuild the poll loop with the new token').to.equal(
+				'TOKEN_B',
+			);
+		} finally {
+			fetchStub.restore();
+		}
+	});
+
 	it('degrades gracefully when the persisted OAuth token is corrupt', async () => {
 		const { adapter, database } = createAdapter({ deviceSerial: 'BX-123456', pollInterval: 30 });
 
