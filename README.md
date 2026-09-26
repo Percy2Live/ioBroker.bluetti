@@ -145,6 +145,10 @@ Architecture and research notes:
 ## Changelog
 
 <!-- markdownlint-disable-next-line MD024 -->
+### **WORK IN PROGRESS**
+- Fixed re-authentication having no effect until a manual instance restart: after completing the admin OAuth login the running poll loop kept using the previous (often expired) token, leaving `info.connection` false with no telemetry. The poll loop is now rebuilt with the new token immediately after re-auth (#175).
+
+<!-- markdownlint-disable-next-line MD024 -->
 ### 1.0.1 (2026-09-25)
 - Fixed polling stopping permanently after a single stuck poll: a hung request or state write could block the poll loop before it rescheduled, leaving the instance alive but silently not fetching. A per-cycle watchdog now abandons a stuck poll and reschedules with backoff (#171).
 - (ioBroker-Bot) Adapter requires admin >= 7.8.23 now.
