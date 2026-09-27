@@ -147,6 +147,8 @@ Architecture and research notes:
 <!-- markdownlint-disable-next-line MD024 -->
 ### **WORK IN PROGRESS**
 - Fixed re-authentication having no effect until a manual instance restart: after completing the admin OAuth login the running poll loop kept using the previous (often expired) token, leaving `info.connection` false with no telemetry. The poll loop is now rebuilt with the new token immediately after re-auth (#175).
+- Fixed a single transient token refresh failure (network error, timeout, 5xx) blocking telemetry for up to 75 minutes: the refresh retry backoff is now classified per error. Rejected credentials (invalid_grant / other 4xx) still back off for an hour, but a transient failure only skips roughly the next poll (#178).
+- The underlying reason of a failed token refresh is now logged once as a warning, so it is visible even though `status.lastError` is later overwritten by the throttle message (#178).
 
 <!-- markdownlint-disable-next-line MD024 -->
 ### 1.0.1 (2026-09-25)
