@@ -451,6 +451,12 @@ class Bluetti extends utils.Adapter {
 			persistToken: async (_token, oauthTokenJson) => {
 				await this.persistTokenJson(oauthTokenJson);
 			},
+			// Log the real refresh error once per failure window. onFailure only writes
+			// status.lastError, which the throttle message later overwrites, hiding the
+			// original cause (#178). This fires only on actual attempts, not throttled polls.
+			onRefreshFailure: error => {
+				this.log.warn(`BLUETTI OAuth token refresh failed: ${extractSafeErrorMessage(error)}`);
+			},
 		});
 	}
 

@@ -5,8 +5,33 @@ import { expect } from 'chai';
 // @ts-expect-error Runtime import resolved by ts-node.
 import * as tokenProviderModule from './bluetti-stored-token-provider.ts';
 
-const { BluettiStoredTokenProvider, BluettiStoredTokenProviderError, parseStoredToken, stringifyToken } =
-	tokenProviderModule;
+const {
+	BluettiStoredTokenProvider,
+	BluettiStoredTokenProviderError,
+	classifyRefreshFailure,
+	parseStoredToken,
+	stringifyToken,
+} = tokenProviderModule;
+
+function nearExpiryTokenJson(): string {
+	return JSON.stringify({
+		access_token: 'failing-access-token-secret',
+		refresh_token: 'failing-refresh-token-secret',
+		expires_at: 900,
+	});
+}
+
+// The project's type-check scope does not include chai-as-promised, so assert rejections
+// with a plain helper instead of `rejectedWith` to keep `npm run check` green.
+async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
+	try {
+		await promise;
+	} catch (error) {
+		expect(error).to.be.instanceOf(BluettiStoredTokenProviderError);
+		return error;
+	}
+	expect.fail('Expected the promise to reject');
+}
 
 describe('BluettiStoredTokenProvider', () => {
 	it('returns a valid stored access token without refreshing', async () => {
@@ -200,6 +225,116 @@ describe('BluettiStoredTokenProvider', () => {
 				'refresh_throttled',
 			);
 		}
+	});
+
+	it('retries a transient refresh failure after a short delay instead of the full auth backoff (#178)', async () => {
+		let now = 1_000_000;
+		let refreshCalls = 0;
+		const provider = new BluettiStoredTokenProvider({
+			oauthTokenJson: nearExpiryTokenJson(),
+			now: () => now,
+			refreshRetryDelayMs: 3_600_000,
+			transientRetryDelayMs: 60_000,
+			refreshToken: () => {
+				refreshCalls++;
+				// First attempt hits a transient network error, later attempts succeed.
+				if (refreshCalls === 1) {
+					return Promise.reject(new Error('socket hang up'));
+				}
+				return Promise.resolve({
+					access_token: 'recovered-access-token-secret',
+					refresh_token: 'recovered-refresh-token-secret',
+					expires_at: 5_000,
+				});
+			},
+			persistToken: () => Promise.resolve(),
+		});
+
+		await expectRejection(provider.getAccessToken());
+
+		// Still inside the short transient window: throttled, no new attempt.
+		now += 30_000;
+		try {
+			await provider.getAccessToken();
+			expect.fail('Expected refresh throttle');
+		} catch (error) {
+			expect((error as InstanceType<typeof BluettiStoredTokenProviderError>).reason).to.equal(
+				'refresh_throttled',
+			);
+		}
+		expect(refreshCalls).to.equal(1);
+
+		// Past the transient delay (but well inside the hour-long auth backoff): retry succeeds.
+		now += 30_000;
+		expect(await provider.getAccessToken()).to.equal('recovered-access-token-secret');
+		expect(refreshCalls).to.equal(2);
+	});
+
+	it('keeps the full backoff for a rejected refresh token (#178)', async () => {
+		let now = 1_000_000;
+		const provider = new BluettiStoredTokenProvider({
+			oauthTokenJson: nearExpiryTokenJson(),
+			now: () => now,
+			refreshRetryDelayMs: 3_600_000,
+			transientRetryDelayMs: 60_000,
+			refreshToken: () => {
+				// Mirrors BluettiOAuthTokenClientError for invalid_grant.
+				const error = new Error('BLUETTI OAuth token endpoint returned invalid_grant');
+				(error as unknown as { reason: string }).reason = 'oauth_error';
+				return Promise.reject(error);
+			},
+			persistToken: () => Promise.resolve(),
+		});
+
+		await expectRejection(provider.getAccessToken());
+
+		// Past the short transient window but inside the auth backoff: still throttled.
+		now += 120_000;
+		try {
+			await provider.getAccessToken();
+			expect.fail('Expected refresh throttle');
+		} catch (error) {
+			expect((error as InstanceType<typeof BluettiStoredTokenProviderError>).reason).to.equal(
+				'refresh_throttled',
+			);
+		}
+	});
+
+	it('reports each real refresh failure once, but not on throttled polls (#178)', async () => {
+		let now = 1_000_000;
+		const failures: unknown[] = [];
+		const provider = new BluettiStoredTokenProvider({
+			oauthTokenJson: nearExpiryTokenJson(),
+			now: () => now,
+			transientRetryDelayMs: 60_000,
+			refreshToken: () => Promise.reject(new Error('socket hang up')),
+			persistToken: () => Promise.resolve(),
+			onRefreshFailure: error => failures.push(error),
+		});
+
+		await expectRejection(provider.getAccessToken());
+		expect(failures).to.have.length(1);
+
+		// Throttled poll: no new attempt, so no second failure report.
+		now += 30_000;
+		await expectRejection(provider.getAccessToken());
+		expect(failures).to.have.length(1);
+
+		// After the transient delay a fresh attempt fails again and is reported once more.
+		now += 30_000;
+		await expectRejection(provider.getAccessToken());
+		expect(failures).to.have.length(2);
+	});
+
+	it('classifies refresh failures into auth and transient', () => {
+		expect(classifyRefreshFailure({ reason: 'oauth_error' })).to.equal('auth');
+		expect(classifyRefreshFailure({ httpStatus: 401 })).to.equal('auth');
+		expect(classifyRefreshFailure({ httpStatus: 400 })).to.equal('auth');
+		expect(classifyRefreshFailure({ reason: 'network_error' })).to.equal('transient');
+		expect(classifyRefreshFailure({ reason: 'timeout' })).to.equal('transient');
+		expect(classifyRefreshFailure({ httpStatus: 429 })).to.equal('transient');
+		expect(classifyRefreshFailure({ httpStatus: 503 })).to.equal('transient');
+		expect(classifyRefreshFailure(new Error('unknown'))).to.equal('transient');
 	});
 
 	it('rejects missing and malformed stored tokens', () => {

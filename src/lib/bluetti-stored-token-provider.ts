@@ -3,7 +3,13 @@
 import type { BluettiTokenProvider } from './bluetti-cloud-provider';
 
 const DEFAULT_EXPIRY_BUFFER_MS = 30_000;
+// A failed refresh caused by rejected credentials (invalid_grant, other 4xx) cannot be
+// fixed by retrying: the refresh token is dead until the user re-authenticates (#175).
+// Back off for a full hour so we do not hammer the SSO endpoint with a dead token.
 const DEFAULT_REFRESH_RETRY_DELAY_MS = 60 * 60 * 1000;
+// A transient failure (network error, timeout, 5xx) is expected to clear on its own, so
+// only skip roughly the next poll instead of blocking telemetry for the full hour (#178).
+const DEFAULT_TRANSIENT_REFRESH_RETRY_DELAY_MS = 60 * 1000;
 
 export interface BluettiOAuthToken {
 	access_token: string;
@@ -21,7 +27,11 @@ export interface BluettiStoredTokenProviderOptions {
 	now?: () => number;
 	expiryBufferMs?: number;
 	refreshRetryDelayMs?: number;
+	transientRetryDelayMs?: number;
+	onRefreshFailure?: (error: unknown) => void;
 }
+
+export type BluettiRefreshFailureClass = 'auth' | 'transient';
 
 export type BluettiStoredTokenProviderErrorReason =
 	| 'missing_token'
@@ -53,9 +63,12 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 	private readonly persistTokenCallback: (token: BluettiOAuthToken, oauthTokenJson: string) => Promise<void>;
 	private readonly now: () => number;
 	private readonly expiryBufferMs: number;
-	private readonly refreshRetryDelayMs: number;
+	private readonly authRetryDelayMs: number;
+	private readonly transientRetryDelayMs: number;
+	private readonly onRefreshFailure?: (error: unknown) => void;
 	private tokenExpired = false;
 	private lastRefreshFailureAt?: number;
+	private lastRefreshRetryDelayMs?: number;
 
 	public constructor(options: BluettiStoredTokenProviderOptions) {
 		this.now = options.now ?? Date.now;
@@ -63,7 +76,9 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 		this.refreshTokenCallback = options.refreshToken;
 		this.persistTokenCallback = options.persistToken;
 		this.expiryBufferMs = options.expiryBufferMs ?? DEFAULT_EXPIRY_BUFFER_MS;
-		this.refreshRetryDelayMs = options.refreshRetryDelayMs ?? DEFAULT_REFRESH_RETRY_DELAY_MS;
+		this.authRetryDelayMs = options.refreshRetryDelayMs ?? DEFAULT_REFRESH_RETRY_DELAY_MS;
+		this.transientRetryDelayMs = options.transientRetryDelayMs ?? DEFAULT_TRANSIENT_REFRESH_RETRY_DELAY_MS;
+		this.onRefreshFailure = options.onRefreshFailure;
 	}
 
 	public async getAccessToken(): Promise<string> {
@@ -93,11 +108,20 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 			this.token = refreshedToken;
 			this.tokenExpired = false;
 			this.lastRefreshFailureAt = undefined;
+			this.lastRefreshRetryDelayMs = undefined;
 			await this.persistTokenCallback(refreshedToken, stringifyToken(refreshedToken));
 
 			return refreshedToken.access_token;
 		} catch (error) {
 			this.lastRefreshFailureAt = this.now();
+			// A rejected refresh token needs a long backoff; a transient error only skips
+			// the next poll (#178). The class decides how long assertRefreshAllowed throttles.
+			this.lastRefreshRetryDelayMs =
+				classifyRefreshFailure(error) === 'auth' ? this.authRetryDelayMs : this.transientRetryDelayMs;
+			// Surface the underlying reason exactly once per real attempt (throttled polls do
+			// not reach this catch), so the original error is visible in the log even though
+			// status.lastError is later overwritten by the throttle message (#178).
+			this.onRefreshFailure?.(error);
 
 			if (error instanceof BluettiStoredTokenProviderError) {
 				throw error;
@@ -142,7 +166,8 @@ export class BluettiStoredTokenProvider implements BluettiTokenProvider {
 
 		if (
 			this.lastRefreshFailureAt !== undefined &&
-			this.now() - this.lastRefreshFailureAt < this.refreshRetryDelayMs
+			this.lastRefreshRetryDelayMs !== undefined &&
+			this.now() - this.lastRefreshFailureAt < this.lastRefreshRetryDelayMs
 		) {
 			throw new BluettiStoredTokenProviderError(
 				'refresh_throttled',
@@ -224,6 +249,28 @@ function normalizeToken(value: unknown, now?: () => number): BluettiOAuthToken {
 	}
 
 	return token;
+}
+
+// Decides how long a failed refresh should block further attempts. Duck-typed on the
+// BluettiOAuthTokenClientError shape (reason/httpStatus) to avoid a circular import.
+// invalid_grant and other 4xx (except 429) mean the credentials are rejected — retrying
+// every poll cannot help, so back off long. Everything else (network error, timeout, 5xx,
+// 429, and unknown errors) is treated as transient and retried soon (#178).
+export function classifyRefreshFailure(error: unknown): BluettiRefreshFailureClass {
+	if (!isObject(error)) {
+		return 'transient';
+	}
+
+	if (error.reason === 'oauth_error') {
+		return 'auth';
+	}
+
+	const httpStatus = error.httpStatus;
+	if (typeof httpStatus === 'number' && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
+		return 'auth';
+	}
+
+	return 'transient';
 }
 
 function getExpiresAtMs(token: BluettiOAuthToken): number | undefined {
