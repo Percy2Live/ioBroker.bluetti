@@ -4,6 +4,7 @@ import { expect } from 'chai';
 // suffix is needed at runtime, while the main tsc config does not enable it.
 // @ts-expect-error Runtime import resolved by ts-node.
 import * as tokenProviderModule from './bluetti-stored-token-provider.ts';
+import type { BluettiOAuthToken } from './bluetti-stored-token-provider.ts';
 
 const {
 	BluettiStoredTokenProvider,
@@ -163,6 +164,57 @@ describe('BluettiStoredTokenProvider', () => {
 		now += 60_000;
 		expect(await provider.getAccessToken()).to.equal('refreshed-access-token-secret');
 		expect(refreshCalls).to.equal(1);
+	});
+
+	it('accepts expires_in delivered as a numeric string and does not refresh on every poll (#178)', async () => {
+		let now = 1_000_000; // created_at stamped at load as floor(now / 1000) = 1000 s
+		let refreshCalls = 0;
+		const provider = new BluettiStoredTokenProvider({
+			// Real BLUETTI shape: every numeric OAuth field arrives as a string.
+			oauthTokenJson: JSON.stringify({
+				access_token: 'string-expires-access-token-secret',
+				refresh_token: 'string-expires-refresh-token-secret',
+				token_type: 'bearer',
+				expires_in: '3600',
+			}),
+			now: () => now,
+			refreshToken: () => {
+				refreshCalls++;
+				// Cast: the live wire response carries expires_in as a string, which the
+				// BluettiOAuthToken type intentionally does not model.
+				return Promise.resolve({
+					access_token: 'refreshed-access-token-secret',
+					refresh_token: 'refreshed-refresh-token-secret',
+					token_type: 'bearer',
+					expires_in: '3600',
+				} as unknown as BluettiOAuthToken);
+			},
+			persistToken: () => Promise.resolve(),
+		});
+
+		// The string lifetime is coerced, so an expiry is computable and no refresh is forced.
+		expect(provider.isTokenNearExpiry()).to.equal(false);
+		for (let poll = 0; poll < 5; poll++) {
+			now += 60_000;
+			expect(await provider.getAccessToken()).to.equal('string-expires-access-token-secret');
+		}
+		expect(refreshCalls).to.equal(0);
+	});
+
+	it('drops a non-numeric expires_in instead of leaking the raw string through serialization', () => {
+		const parsed = parseStoredToken(
+			JSON.stringify({
+				access_token: 'bogus-lifetime-access-token-secret',
+				refresh_token: 'bogus-lifetime-refresh-token-secret',
+				expires_in: 'not-a-number',
+			}),
+			() => 1_000_000,
+		);
+		expect(parsed).to.not.equal(undefined);
+		const roundTripped = JSON.parse(stringifyToken(parsed as BluettiOAuthToken));
+		expect(roundTripped).to.not.have.property('expires_in');
+		// With no derivable lifetime, created_at is not stamped either.
+		expect(roundTripped).to.not.have.property('created_at');
 	});
 
 	it('refreshes after the cloud provider marks the token expired', async () => {
