@@ -220,17 +220,12 @@ function normalizeToken(value: unknown, now?: () => number): BluettiOAuthToken {
 		token.refresh_token = value.refresh_token;
 	}
 
-	if (typeof value.expires_at === 'number') {
-		token.expires_at = value.expires_at;
-	}
-
-	if (typeof value.expires_in === 'number') {
-		token.expires_in = value.expires_in;
-	}
-
-	if (typeof value.created_at === 'number') {
-		token.created_at = value.created_at;
-	}
+	// BLUETTI returns the numeric OAuth fields as strings ("3600"), so coerce numeric
+	// strings here — otherwise the raw string leaks through the spread above, no expiry
+	// can be derived and isNearExpiry() forces a refresh on every poll (#178).
+	setFiniteNumber(token, 'expires_at', value.expires_at);
+	setFiniteNumber(token, 'expires_in', value.expires_in);
+	setFiniteNumber(token, 'created_at', value.created_at);
 
 	// BLUETTI's /oauth2/token response carries only a relative lifetime (expires_in),
 	// with no created_at/expires_at. Without an issue timestamp getExpiresAtMs() cannot
@@ -291,6 +286,23 @@ function normalizeEpochMs(value: number): number {
 
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
+}
+
+// Assigns a numeric OAuth field, accepting both numbers and numeric strings ("3600").
+// Anything non-finite (missing, empty, non-numeric) clears the key so the raw string
+// value copied by the spread in normalizeToken() cannot survive.
+function setFiniteNumber(
+	token: BluettiOAuthToken,
+	key: 'expires_at' | 'expires_in' | 'created_at',
+	value: unknown,
+): void {
+	const num =
+		typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+	if (Number.isFinite(num)) {
+		token[key] = num;
+	} else {
+		delete token[key];
+	}
 }
 
 function extractSafeErrorMessage(error: unknown): string {
