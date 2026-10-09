@@ -5,8 +5,16 @@ import { expect } from 'chai';
 // @ts-expect-error Runtime import resolved by ts-node.
 import * as telemetry from './bluetti-telemetry-model.ts';
 
-const { TELEMETRY_STATES, mapDeviceMetadata, mapTelemetryFields, mapHealth, resolveModeLabel, toTelemetryNumber } =
-	telemetry;
+const {
+	TELEMETRY_STATES,
+	mapDeviceMetadata,
+	mapTelemetryFields,
+	mapHealth,
+	resolveModeLabel,
+	toTelemetryNumber,
+	isTelemetrySnapshotTrustworthy,
+	applyTelemetryHold,
+} = telemetry;
 
 describe('bluetti telemetry model', () => {
 	describe('object definitions', () => {
@@ -325,6 +333,76 @@ describe('bluetti telemetry model', () => {
 			expect(toTelemetryNumber(Number.NaN)).to.equal(null);
 			expect(toTelemetryNumber(null)).to.equal(null);
 			expect(toTelemetryNumber(undefined)).to.equal(null);
+		});
+	});
+
+	describe('isTelemetrySnapshotTrustworthy', () => {
+		it('accepts an online device with a non-empty stateList', () => {
+			expect(
+				isTelemetrySnapshotTrustworthy({
+					sn: 'SN1',
+					online: '1',
+					stateList: [{ fnCode: 'SOC', fnValue: '100' }],
+				}),
+			).to.equal(true);
+		});
+
+		it('accepts the "true"/"online" spellings of the online flag', () => {
+			for (const online of ['true', 'online', 'ONLINE']) {
+				expect(
+					isTelemetrySnapshotTrustworthy({
+						sn: 'SN1',
+						online,
+						stateList: [{ fnCode: 'SOC', fnValue: '50' }],
+					}),
+					`online=${online}`,
+				).to.equal(true);
+			}
+		});
+
+		it('rejects an offline snapshot even when a stateList is present (#185)', () => {
+			expect(
+				isTelemetrySnapshotTrustworthy({
+					sn: 'SN1',
+					online: '0',
+					stateList: [{ fnCode: 'SOC', fnValue: '0' }],
+				}),
+			).to.equal(false);
+		});
+
+		it('rejects an empty stateList even when the device reports online (#185)', () => {
+			expect(isTelemetrySnapshotTrustworthy({ sn: 'SN1', online: '1', stateList: [] })).to.equal(false);
+		});
+	});
+
+	describe('applyTelemetryHold', () => {
+		const freshHealth = {
+			nextDelayMs: 30_000,
+			consecutiveFailures: 0,
+			outageSuspected: false,
+			authFailed: false,
+			telemetryFresh: true,
+			socStale: false,
+			outageReason: '' as const,
+			lastErrorKind: null,
+			lastSuccessAt: 1_000,
+			lastFailureAt: null,
+		};
+
+		it('forces the staleness flags and a stale reason on an otherwise-healthy snapshot (#185)', () => {
+			const held = applyTelemetryHold(freshHealth);
+			expect(held.telemetryFresh).to.equal(false);
+			expect(held.socStale).to.equal(true);
+			expect(held.outageReason).to.equal('stale_telemetry');
+			// Unrelated fields are preserved.
+			expect(held.consecutiveFailures).to.equal(0);
+			expect(held.lastSuccessAt).to.equal(1_000);
+		});
+
+		it('preserves an existing outage reason rather than masking it', () => {
+			const held = applyTelemetryHold({ ...freshHealth, outageReason: 'auth_failed' });
+			expect(held.outageReason).to.equal('auth_failed');
+			expect(held.socStale).to.equal(true);
 		});
 	});
 

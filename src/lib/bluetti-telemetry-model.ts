@@ -347,6 +347,32 @@ function isOnline(value: string): boolean {
 	return normalized === '1' || normalized === 'true' || normalized === 'online';
 }
 
+// A device-states snapshot is authoritative only when the cloud reports the device
+// online AND the payload carries a non-empty stateList. BLUETTI occasionally answers
+// an otherwise successful poll (HTTP 200, msgCode 0) with the device marked offline
+// and/or an empty stateList — the same placeholder an unbound device returns (see
+// bluetti-cloud-provider bindDevices note). Writing such a snapshot overwrites the
+// live battery/power values with 0, so a single glitched poll makes the history show a
+// phantom empty battery and would fire any soc/gridInput alarm (see #185). Callers
+// hold the last-known values instead when this returns false.
+export function isTelemetrySnapshotTrustworthy(product: BluettiUserProduct): boolean {
+	return isOnline(product.online) && (product.stateList?.length ?? 0) > 0;
+}
+
+// Forces the staleness signals on a health snapshot when the latest poll succeeded at
+// the transport level but its telemetry was held (non-authoritative snapshot, see
+// #185). The held values are last-known, not current, so socStale/telemetryFresh must
+// say so even though no poll failed. An existing outage reason is preserved; only the
+// "all good" ('') case is replaced with 'stale_telemetry'.
+export function applyTelemetryHold(health: BluettiPollingHealth): BluettiPollingHealth {
+	return {
+		...health,
+		telemetryFresh: false,
+		socStale: true,
+		outageReason: health.outageReason === '' ? 'stale_telemetry' : health.outageReason,
+	};
+}
+
 // Device metadata from verified product fields. Empty strings map to null (skip).
 export function mapDeviceMetadata(product: BluettiUserProduct): Record<string, TelemetryValue> {
 	const values: Record<string, TelemetryValue> = {};

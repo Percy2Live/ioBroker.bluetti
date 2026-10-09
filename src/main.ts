@@ -28,6 +28,8 @@ import {
 import {
 	TELEMETRY_STATES,
 	TELEMETRY_FIELD_MAP,
+	applyTelemetryHold,
+	isTelemetrySnapshotTrustworthy,
 	mapDeviceMetadata,
 	mapHealth,
 	mapTelemetryFields,
@@ -74,6 +76,10 @@ class Bluetti extends utils.Adapter {
 	// deduplicates unknown telemetry fnCodes so they are logged once, not per poll.
 	private readonly unknownKeyTracker = new UnknownTelemetryKeyTracker(TELEMETRY_FIELD_MAP);
 	private lastPollingHealth?: BluettiPollingHealth;
+	// True when the latest successful poll carried a non-authoritative snapshot and the
+	// live telemetry was held at its last-known value (see #185). Reset at the start of
+	// every poll so a stale hold never leaks into a later poll's health write.
+	private lastSnapshotHeld = false;
 	private lastKnownModel: string | null = null;
 	private lastApiStatus = 'unknown';
 	// Device model/name from getUserProducts, cached once at poll start. The
@@ -192,11 +198,13 @@ class Bluetti extends utils.Adapter {
 			policy,
 			pollTimeoutMs: POLL_WATCHDOG_MS,
 			runPoll: async () => {
+				// Reset before the fetch so a failing poll (which throws before the
+				// assignment below) never inherits a previous poll's hold state.
+				this.lastSnapshotHeld = false;
 				const products = await provider.getDeviceStates(deviceSerial);
 				const product = products.find(candidate => candidate.sn === deviceSerial) ?? products[0];
-				if (product) {
-					await this.writeTelemetry(product);
-				}
+				// An absent product is itself an empty response: hold last values and flag stale.
+				this.lastSnapshotHeld = product ? !(await this.writeTelemetry(product)) : true;
 			},
 			classifyError: error => (error instanceof BluettiCloudProviderError ? error.kind : 'network'),
 			setTimer: (callback, delayMs) => this.setTimeout(callback, delayMs),
@@ -269,7 +277,10 @@ class Bluetti extends utils.Adapter {
 		}
 	}
 
-	private async writeTelemetry(product: BluettiUserProduct): Promise<void> {
+	// Writes a device-states snapshot. Returns true when the live telemetry was written,
+	// false when the snapshot was non-authoritative (device offline / empty stateList)
+	// and the last-known battery/power values were held instead (see #185).
+	private async writeTelemetry(product: BluettiUserProduct): Promise<boolean> {
 		this.trackDiagnostics(product);
 		// The deviceStates payload omits model/name, so merge the cached values from
 		// getUserProducts before mapping metadata (see #95). The payload's own fields
@@ -279,7 +290,18 @@ class Bluetti extends utils.Adapter {
 			model: (product.model ?? '').trim() || this.cachedDeviceModel,
 			name: (product.name ?? '').trim() || this.cachedDeviceName,
 		};
-		await this.writeStateValues({ ...mapDeviceMetadata(enrichedProduct), ...mapTelemetryFields(product) });
+		// Always keep device identity/online current, even for a held snapshot.
+		const metadata = mapDeviceMetadata(enrichedProduct);
+		if (!isTelemetrySnapshotTrustworthy(product)) {
+			await this.writeStateValues(metadata);
+			this.log.warn(
+				`BLUETTI returned a non-authoritative snapshot (device online=${product.online}, ` +
+					`${product.stateList?.length ?? 0} state field(s)); holding last-known telemetry (see #185).`,
+			);
+			return false;
+		}
+		await this.writeStateValues({ ...metadata, ...mapTelemetryFields(product) });
+		return true;
 	}
 
 	// Remembers the last-known model for diagnostics and logs any telemetry fnCodes
@@ -300,8 +322,11 @@ class Bluetti extends utils.Adapter {
 	}
 
 	private async writeHealth(health: BluettiPollingHealth): Promise<void> {
-		this.lastPollingHealth = health;
-		await this.writeStateValues(mapHealth(health));
+		// A held snapshot means the poll succeeded but the live values are last-known,
+		// not current, so the staleness flags must reflect that (see #185).
+		const effective = this.lastSnapshotHeld ? applyTelemetryHold(health) : health;
+		this.lastPollingHealth = effective;
+		await this.writeStateValues(mapHealth(effective));
 	}
 
 	// Builds a sanitized diagnostic snapshot safe to attach to a bug report:
