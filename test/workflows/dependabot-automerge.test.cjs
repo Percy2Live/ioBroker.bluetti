@@ -235,6 +235,17 @@ function makeFakeGithub(scenario = {}) {
 		return items.slice((pageNumber - 1) * size, pageNumber * size);
 	}
 	function fileBody(entry) {
+		if (entry && typeof entry === 'object' && Object.prototype.hasOwnProperty.call(entry, 'b64')) {
+			// Raw base64 passthrough for decoding-härtung tests: `b64` is used
+			// verbatim as the API content, `size` optionally overrides the
+			// byte size the API would report.
+			return {
+				type: 'file',
+				encoding: 'base64',
+				size: entry.size === undefined ? Buffer.from(entry.b64, 'base64').length : entry.size,
+				content: entry.b64,
+			};
+		}
 		if (entry && typeof entry === 'object' && Object.prototype.hasOwnProperty.call(entry, 'raw')) {
 			return {
 				type: 'file',
@@ -725,26 +736,57 @@ test('pr commits: count, cap, uniqueness and head inclusion are enforced (R2)', 
 });
 
 test('pr object: number and base SHA are mandatory fields', () => {
-	assert.equal(pure.validatePrObject(makePr(), HEAD).ok, true);
-	assert.equal(pure.validatePrObject(makePr({ number: undefined }), HEAD).ok, false, 'missing number');
-	assert.equal(pure.validatePrObject(makePr({ number: 12.5 }), HEAD).ok, false, 'fractional number');
-	assert.equal(pure.validatePrObject(makePr({ number: 0 }), HEAD).ok, false, 'zero number');
+	const number = makePr().number;
+	assert.equal(pure.validatePrObject(makePr(), HEAD, number).ok, true, 'matching bound number');
+	assert.equal(pure.validatePrObject(makePr(), HEAD, undefined).ok, false, 'bound number is mandatory');
+	assert.equal(pure.validatePrObject(makePr(), HEAD, 0).ok, false, 'bound number must be positive');
+	assert.equal(pure.validatePrObject(makePr({ number: undefined }), HEAD, number).ok, false, 'missing number');
+	assert.equal(pure.validatePrObject(makePr({ number: 12.5 }), HEAD, number).ok, false, 'fractional number');
+	assert.equal(pure.validatePrObject(makePr({ number: 0 }), HEAD, number).ok, false, 'zero number');
+	assert.equal(pure.validatePrObject(makePr({ number: 189 }), HEAD, number).ok, false, 'number mismatch');
 	assert.equal(
-		pure.validatePrObject(makePr({ base: { ref: 'main', sha: undefined, repo: { id: REPO_ID } } }), HEAD).ok,
+		pure.validatePrObject(makePr({ base: { ref: 'main', sha: undefined, repo: { id: REPO_ID } } }), HEAD, number)
+			.ok,
 		false,
 		'missing base SHA',
 	);
 	assert.equal(
-		pure.validatePrObject(makePr({ base: { ref: 'main', sha: 'short', repo: { id: REPO_ID } } }), HEAD).ok,
+		pure.validatePrObject(makePr({ base: { ref: 'main', sha: 'short', repo: { id: REPO_ID } } }), HEAD, number).ok,
 		false,
 		'invalid base SHA',
 	);
 	assert.equal(
-		pure.validatePrObject(makePr({ base: { ref: 'develop', sha: BASE, repo: { id: REPO_ID } } }), HEAD).ok,
+		pure.validatePrObject(makePr({ base: { ref: 'develop', sha: BASE, repo: { id: REPO_ID } } }), HEAD, number).ok,
 		false,
 		'retargeted base',
 	);
-	assert.equal(pure.validatePrObject(null, HEAD).ok, false);
+	assert.equal(pure.validatePrObject(null, HEAD, number).ok, false);
+});
+
+test('pr object: draft status must be the explicit boolean false (N2-R3)', () => {
+	const number = makePr().number;
+	assert.equal(pure.validatePrObject(makePr(), HEAD, number).ok, true, 'explicit false passes');
+	assert.equal(pure.validatePrObject(makePr({ draft: true }), HEAD, number).ok, false, 'draft true');
+	assert.equal(pure.validatePrObject(makePr({ draft: undefined }), HEAD, number).ok, false, 'draft missing');
+	assert.equal(pure.validatePrObject(makePr({ draft: null }), HEAD, number).ok, false, 'draft null');
+	assert.equal(pure.validatePrObject(makePr({ draft: 'false' }), HEAD, number).ok, false, 'draft string');
+	assert.equal(pure.validatePrObject(makePr({ draft: 0 }), HEAD, number).ok, false, 'draft number');
+});
+
+test('pr object: state and head mismatches are fixed categories without raw echoes (N2-R7)', () => {
+	const number = makePr().number;
+	const canary = 'SYNTHETIC-N2-CANARY\ninjected';
+	const state = pure.validatePrObject(makePr({ state: canary }), HEAD, number);
+	assert.equal(state.ok, false);
+	assert.equal(state.reason.includes('SYNTHETIC-N2-CANARY'), false, 'state canary leaked');
+	const head = pure.validatePrObject(
+		makePr({ head: { sha: canary, ref: 'x', repo: { id: REPO_ID } } }),
+		HEAD,
+		number,
+	);
+	assert.equal(head.ok, false);
+	assert.equal(head.reason.includes('SYNTHETIC-N2-CANARY'), false, 'head canary leaked');
+	assert.match(head.reason, /does not match triggering run head/);
 });
 
 /* ---------------------------------------------------------------------- */
@@ -1810,6 +1852,239 @@ test('idempotency: second identical event finds the PR already merged', async ()
 	});
 	assert.equal(result.result, 'skip', result.reason);
 	assert.match(result.reason, /already merged/);
+	assert.equal(writes.length, 0);
+});
+
+/* ---------------------------------------------------------------------- */
+/* N2-R3: PR number binding and mandatory draft status                      */
+/* ---------------------------------------------------------------------- */
+
+test('skip: fresh PR number mismatch at initial validation fails closed (N2-R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			// The candidate list reports #188; every fresh GET responds with
+			// another, otherwise fully valid PR number.
+			pr: makePr({ number: 189 }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /does not match the bound pull request number/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: PR number drift between initial and final validation fails closed (N2-R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: count => (count === 0 ? makePr() : makePr({ number: 189 })),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /does not match the bound pull request number/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: unknown draft status fails closed (N2-R3)', async () => {
+	for (const draft of [undefined, null, 'false']) {
+		const { result, writes } = await runScenario({
+			scenario: { pr: makePr({ draft }), fileContents: defaultFiles() },
+			enabled: false,
+		});
+		assert.equal(result.result, 'skip', `${String(draft)}: ${result.reason}`);
+		assert.match(result.reason, /draft status is unknown/);
+		assert.equal(writes.length, 0);
+	}
+});
+
+test('skip: number mismatch and unknown draft perform no mutation in the fake enabled path (N2-R3)', async () => {
+	const mismatch = await runScenario({
+		scenario: { pr: makePr({ number: 189 }), fileContents: defaultFiles() },
+		enabled: true,
+	});
+	assert.equal(mismatch.result.result, 'skip', mismatch.result.reason);
+	assert.equal(mismatch.writes.length, 0, 'no PUT before full validation');
+	const draft = await runScenario({
+		scenario: { pr: makePr({ draft: undefined }), fileContents: defaultFiles() },
+		enabled: true,
+	});
+	assert.equal(draft.result.result, 'skip', draft.result.reason);
+	assert.equal(draft.writes.length, 0, 'no PUT before full validation');
+});
+
+/* ---------------------------------------------------------------------- */
+/* N2-R7: canaries in name, message, number, head and status fields          */
+/* ---------------------------------------------------------------------- */
+
+function emittedText(result, core) {
+	return [result.reason, ...core.__info, ...core.__summaries, ...core.__failures].join('\n');
+}
+
+test('error: foreign error name and message never reach info, summary or setFailed (N2-R7)', async () => {
+	const foreign = new Error('hidden canary message');
+	foreign.name = 'SYNTHETIC-N2-CANARY\nraw response';
+	foreign.status = 500;
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			run: () => {
+				throw foreign;
+			},
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	assert.equal(result.reason, 'fail closed: unexpected error (HTTP 500)');
+	const emitted = emittedText(result, core);
+	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'name canary leaked');
+	assert.equal(emitted.includes('hidden canary message'), false, 'message canary leaked');
+	assert.equal(writes.length, 0);
+});
+
+test('skip: invalid candidate PR number is never serialized into outputs (N2-R7)', async () => {
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			openPrs: [makePr({ number: 'SYNTHETIC-N2-CANARY\nraw JSON' })],
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /candidate PR number/);
+	const emitted = emittedText(result, core);
+	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'number canary leaked');
+	assert.equal(writes.length, 0);
+});
+
+test('skip: invalid PR head value is never echoed (N2-R7)', async () => {
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			pr: makePr({ head: { sha: 'SYNTHETIC-N2-CANARY\nraw JSON', ref: 'x', repo: { id: REPO_ID } } }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	const emitted = emittedText(result, core);
+	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'head canary leaked');
+	assert.equal(writes.length, 0);
+});
+
+test('skip: run event/status/conclusion values are never echoed (N2-R7)', async () => {
+	for (const override of [
+		{ event: 'SYNTHETIC-N2-CANARY' },
+		{ status: 'SYNTHETIC-N2-CANARY' },
+		{ conclusion: 'SYNTHETIC-N2-CANARY' },
+	]) {
+		const { result, core } = await runScenario({
+			scenario: { run: makeRun(override), fileContents: defaultFiles() },
+			enabled: false,
+		});
+		assert.equal(result.result, 'skip', result.reason);
+		const emitted = emittedText(result, core);
+		assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'run field canary leaked');
+	}
+});
+
+test('skip: non-open PR state value is never echoed (N2-R7)', async () => {
+	const { result, core } = await runScenario({
+		scenario: { pr: makePr({ state: 'SYNTHETIC-N2-CANARY' }), fileContents: defaultFiles() },
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	const emitted = emittedText(result, core);
+	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'state canary leaked');
+});
+
+test('skip: check job and check-run status values are never echoed (N2-R7)', async () => {
+	const poisoned = JOBS.map(job =>
+		job.name === 'check-and-lint'
+			? { ...job, status: 'SYNTHETIC-N2-CANARY', conclusion: 'SYNTHETIC-N2-CANARY' }
+			: job,
+	);
+	const { result, core } = await runScenario({
+		scenario: { jobs: poisoned, fileContents: defaultFiles() },
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	const emitted = emittedText(result, core);
+	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'status canary leaked');
+});
+
+/* ---------------------------------------------------------------------- */
+/* N2-D1: strict base64 / UTF-8 decoding                                    */
+/* ---------------------------------------------------------------------- */
+
+test('strict base64: accepts padded and line-wrapped representations, rejects everything else (N2-D1)', () => {
+	const raw = Buffer.from(JSON.stringify(LOCKFILE)).toString('base64');
+	const size = Buffer.byteLength(JSON.stringify(LOCKFILE));
+	assert.equal(pure.strictBase64(raw, size), raw, 'padded representation');
+	assert.equal(pure.strictBase64(raw.replace(/(.{60})/g, '$1\n'), size), raw, 'legitimate LF line wraps');
+	assert.equal(pure.strictBase64(raw.replace(/(.{60})/g, '$1\r\n'), size), raw, 'CRLF line wraps');
+	assert.equal(pure.strictBase64(`!${raw}!!!`, size), null, 'stray characters are not ignored');
+	assert.equal(pure.strictBase64(` ${raw}`, size), null, 'space is not a line wrap');
+	assert.equal(pure.strictBase64(raw, size + 1), null, 'size drift up');
+	assert.equal(pure.strictBase64(raw, size - 1), null, 'size drift down');
+	assert.equal(pure.strictBase64(null, 5), null, 'content must be a string');
+	assert.equal(pure.strictBase64(raw, '3'), null, 'size must be a safe integer');
+	assert.equal(pure.strictBase64('', 0), '', 'empty file');
+	assert.equal(pure.strictBase64('', 1), null, 'empty content with a positive size');
+	const maxRawLength = Math.ceil(controller.EXPECTED.MAX_FILE_BYTES / 3) * 4 * 2;
+	assert.equal(pure.strictBase64('A'.repeat(maxRawLength + 1), 0), null, 'raw bound before allocation');
+	// Padding must sit exactly where the reported size implies.
+	const one = Buffer.from('a').toString('base64');
+	const two = Buffer.from('ab').toString('base64');
+	const three = Buffer.from('abc').toString('base64');
+	assert.equal(pure.strictBase64(one, 1), one, 'two padding characters for size%3==1');
+	assert.equal(pure.strictBase64(two, 2), two, 'one padding character for size%3==2');
+	assert.equal(pure.strictBase64(three, 3), three, 'no padding for size%3==0');
+	assert.equal(pure.strictBase64('YWJj', 1), null, 'padding inconsistent with the reported size');
+	assert.equal(pure.strictBase64('YQ=', 1), null, 'single padding character');
+	assert.equal(pure.strictBase64('YQ====', 1), null, 'excess padding');
+	assert.equal(pure.strictBase64('YQ==A', 1), null, 'padding followed by data');
+	assert.equal(pure.strictBase64('Y=WJj', 3), null, 'padding in the middle');
+});
+
+test('unsupported-policy: base64 content with stray characters fails closed (N2-D1)', async () => {
+	const files = defaultFiles();
+	const lockB64 = Buffer.from(JSON.stringify(LOCKFILE)).toString('base64');
+	files[`package-lock.json@${HEAD}`] = { b64: `!${lockB64}!!!` };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /base64/);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: padding inside the base64 body fails closed (N2-D1)', async () => {
+	const files = defaultFiles();
+	const lockB64 = Buffer.from(JSON.stringify(LOCKFILE)).toString('base64');
+	files[`package-lock.json@${HEAD}`] = { b64: `${lockB64.slice(0, 4)}=${lockB64.slice(5)}` };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /base64/);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: valid base64 of invalid UTF-8 bytes fails closed (N2-D1)', async () => {
+	const files = defaultFiles();
+	// '{"a' followed by an orphaned UTF-8 lead byte: the representation is
+	// strictly valid base64 with a consistent size, but the bytes are not
+	// UTF-8 — no silent replacement characters may pass as JSON data.
+	files[`package-lock.json@${HEAD}`] = { b64: Buffer.from([0x7b, 0x22, 0x61, 0xc3, 0x28]).toString('base64') };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /not valid UTF-8/);
+	assert.equal(writes.length, 0);
+});
+
+test('audit mode: legitimate line-wrapped base64 content still reaches a merge-decision (N2-D1)', async () => {
+	const files = defaultFiles();
+	const lockB64 = Buffer.from(JSON.stringify(LOCKFILE)).toString('base64');
+	files[`package-lock.json@${HEAD}`] = { b64: lockB64.replace(/(.{60})/g, '$1\n') };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'merge-decision', result.reason);
 	assert.equal(writes.length, 0);
 });
 

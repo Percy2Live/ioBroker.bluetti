@@ -590,13 +590,13 @@ function validateTriggerRun(run) {
 		return { ok: false, reason: `run: workflow is not "${EXPECTED.WORKFLOW_NAME}" at ${EXPECTED.WORKFLOW_PATH}` };
 	}
 	if (run.event !== 'pull_request') {
-		return { ok: false, reason: `run: event is "${run.event}", not "pull_request"` };
+		return { ok: false, reason: 'run: event is not "pull_request"' };
 	}
 	if (run.status !== 'completed') {
-		return { ok: false, reason: `run: status is "${run.status}", not "completed"` };
+		return { ok: false, reason: 'run: status is not "completed"' };
 	}
 	if (run.conclusion !== 'success') {
-		return { ok: false, reason: `run: conclusion is "${run.conclusion}", not "success"` };
+		return { ok: false, reason: 'run: conclusion is not "success"' };
 	}
 	if (!isSha(run.head_sha)) {
 		return { ok: false, reason: 'run: head_sha is not a valid 40-char SHA' };
@@ -666,7 +666,9 @@ function validateChecks(jobs, headCheckRuns, suiteId, headSha) {
 			return { ok: false, reason: `checks: required job "${required}" missing from run attempt` };
 		}
 		if (job.status !== 'completed' || job.conclusion !== 'success') {
-			return { ok: false, reason: `checks: required job "${required}" is ${job.status}/${job.conclusion}` };
+			// Fixed category: never echo the (unvalidated) status/conclusion
+			// values (N2-R7).
+			return { ok: false, reason: `checks: required job "${required}" is not completed/success` };
 		}
 		jobResults[required] = `${job.status}/${job.conclusion}`;
 		const matches = headCheckRuns.filter(
@@ -700,9 +702,11 @@ function validateChecks(jobs, headCheckRuns, suiteId, headSha) {
 			};
 		}
 		if (checkRun.status !== 'completed' || checkRun.conclusion !== 'success') {
+			// Fixed category: never echo the (unvalidated) status/conclusion
+			// values (N2-R7).
 			return {
 				ok: false,
-				reason: `checks: current check-run "${required}" is ${checkRun.status}/${checkRun.conclusion}`,
+				reason: `checks: current check-run "${required}" is not completed/success`,
 			};
 		}
 		if (!checkRun.check_suite || !isSafeId(checkRun.check_suite.id) || checkRun.check_suite.id !== suiteId) {
@@ -716,6 +720,61 @@ function validateChecks(jobs, headCheckRuns, suiteId, headSha) {
 		}
 	}
 	return { ok: true, jobResults };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Strict base64 representation validation (contents API)                  */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Validate the documented base64 representation of a contents response and
+ * return the normalized (line-wrap-free) base64 string, or null when the
+ * representation is invalid. `Buffer.from(text, 'base64')` is NOT a strict
+ * validator — it silently ignores stray characters — so the whole
+ * representation is checked here, before any decoding allocation (N2-D1).
+ *
+ *  - Only base64 alphabet characters plus legitimate GitHub line wrapping
+ *    (CR/LF) are allowed; every other character fails.
+ *  - Padding is only allowed at the very end and must be exactly the padding
+ *    implied by the reported byte size (none, '=' or '==').
+ *  - The normalized length must be exactly the padded base64 length of the
+ *    reported size, so truncation, padding tricks and size drift fail.
+ *  - The raw representation is bounded (at most one line break per payload
+ *    character) before any scan or allocation.
+ *
+ * @param {string} content - raw base64 content string of the API response
+ * @param {number} size - reported byte size of the file
+ */
+function strictBase64(content, size) {
+	if (typeof content !== 'string' || !isSafeId(size) || size < 0) {
+		return null;
+	}
+	// Hard ceiling before any scan: with at most one line-break character per
+	// payload character the raw text never exceeds twice the padded base64
+	// form of the size-limited payload.
+	const maxRawLength = Math.ceil(EXPECTED.MAX_FILE_BYTES / 3) * 4 * 2;
+	if (content.length > maxRawLength) {
+		return null;
+	}
+	// Only documented line wrapping is normalized away; any other character
+	// outside the alphabet is rejected by the charset check below.
+	const normalized = content.replace(/\r\n|\r|\n/g, '');
+	const expectedLength = Math.ceil(size / 3) * 4;
+	if (normalized.length !== expectedLength) {
+		return null;
+	}
+	const expectedPadding = size % 3 === 1 ? '==' : size % 3 === 2 ? '=' : '';
+	if (!normalized.endsWith(expectedPadding)) {
+		return null;
+	}
+	const body = normalized.slice(0, normalized.length - expectedPadding.length);
+	if (body === '') {
+		return expectedPadding === '' ? normalized : null;
+	}
+	if (!/^[A-Za-z0-9+/]+$/.test(body)) {
+		return null;
+	}
+	return normalized;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -779,7 +838,8 @@ function createApi(github) {
 				throw new ControllerError(`file ${filePath} at ${ref} is not a base64 file object`, response.status);
 			}
 			// The size field is mandatory: without it no bounded size decision
-			// can be made. It must be a safe non-negative integer within the limit.
+			// can be made. It must be a safe non-negative integer within the
+			// limit, checked before any content allocation.
 			if (!isSafeId(data.size) || data.size < 0) {
 				return {
 					ok: false,
@@ -789,21 +849,48 @@ function createApi(github) {
 			if (data.size > EXPECTED.MAX_FILE_BYTES) {
 				return {
 					ok: false,
-					reason: `file ${filePath} at ${ref} is ${data.size} bytes (> ${EXPECTED.MAX_FILE_BYTES})`,
+					reason: `file ${filePath} at ${ref} is above the maximum supported size`,
 				};
 			}
-			let decoded;
+			// Strict base64 validation BEFORE decoding (N2-D1): Buffer.from is
+			// not a strict validator (it silently ignores stray characters), so
+			// only an exactly consistent, alphabet-clean representation with
+			// legitimate GitHub line wrapping is accepted. There is no
+			// download or encoding fallback.
+			const normalized = strictBase64(data.content, data.size);
+			if (normalized === null) {
+				return {
+					ok: false,
+					reason: `file ${filePath} at ${ref} has base64 content inconsistent with the reported size or not strictly valid (possible truncation)`,
+				};
+			}
+			let bytes;
 			try {
-				decoded = Buffer.from(data.content, 'base64').toString('utf8');
+				bytes = Buffer.from(normalized, 'base64');
 			} catch {
 				return { ok: false, reason: `file ${filePath} at ${ref} could not be base64-decoded` };
 			}
 			// Decoding consistency: the decoded byte length must equal the
 			// reported size, otherwise the content was truncated or padded.
+			if (bytes.length !== data.size) {
+				return {
+					ok: false,
+					reason: `file ${filePath} at ${ref} decoded to an unexpected byte length (possible truncation)`,
+				};
+			}
+			let decoded;
+			try {
+				// Strict UTF-8: invalid sequences throw instead of silently
+				// degrading into replacement characters that would be accepted
+				// as JSON data (N2-D1).
+				decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+			} catch {
+				return { ok: false, reason: `file ${filePath} at ${ref} is not valid UTF-8` };
+			}
 			if (Buffer.byteLength(decoded, 'utf8') !== data.size) {
 				return {
 					ok: false,
-					reason: `file ${filePath} at ${ref} decoded to ${Buffer.byteLength(decoded, 'utf8')} bytes but reports ${data.size} (possible truncation)`,
+					reason: `file ${filePath} at ${ref} decoded to an unexpected byte length (possible truncation)`,
 				};
 			}
 			try {
@@ -894,20 +981,14 @@ async function run({ github, context, core }, opts = {}) {
 		const config = loadConfig(opts.configPath || path.join(process.cwd(), EXPECTED.CONFIG_PATH));
 
 		if (context.eventName !== 'workflow_run') {
-			return finish('skip', `event is "${context.eventName}", not "workflow_run"`, audit, core, false);
+			return finish('skip', 'event is not "workflow_run"', audit, core, false);
 		}
 		const payloadRun = context.payload && context.payload.workflow_run;
 		if (!payloadRun || typeof payloadRun.id !== 'number' || !Number.isSafeInteger(payloadRun.id)) {
 			return finish('skip', 'payload: workflow_run id missing or not a safe integer', audit, core, false);
 		}
 		if (context.payload.action && context.payload.action !== 'completed') {
-			return finish(
-				'skip',
-				`payload: workflow_run action is "${context.payload.action}", not "completed"`,
-				audit,
-				core,
-				false,
-			);
+			return finish('skip', 'payload: workflow_run action is not "completed"', audit, core, false);
 		}
 		const payloadRepository = context.payload && context.payload.repository;
 		if (!payloadRepository || payloadRepository.full_name !== EXPECTED.REPO_NAME) {
@@ -956,18 +1037,19 @@ async function run({ github, context, core }, opts = {}) {
 		// The candidate's number is a mandatory field: all API paths are built
 		// from it and a missing number must never fall through to a fetch.
 		if (!isSafeId(pr.number) || pr.number <= 0) {
-			return finish(
-				'skip',
-				`candidate PR number is missing or not a safe positive integer (${JSON.stringify(pr.number)})`,
-				audit,
-				core,
-				false,
-			);
+			// Fixed category: the rejected value itself is never serialized
+			// or echoed (N2-R7).
+			return finish('skip', 'candidate PR number is missing or not a safe positive integer', audit, core, false);
 		}
-		audit.prNumber = pr.number;
+		// The candidate number is the binding identity for every subsequent PR
+		// read and for the mutation itself: later responses must match it
+		// exactly and the mutation reuses this bound constant, never a number
+		// re-derived from a response (N2-R3).
+		const boundPrNumber = pr.number;
+		audit.prNumber = boundPrNumber;
 
 		// 3. Fresh PR state and identity validation.
-		const prValidation = await validatePr(api, pr, headSha);
+		const prValidation = await validatePr(api, boundPrNumber, headSha);
 		if (!prValidation.ok) {
 			return finish('skip', prValidation.reason, audit, core, false);
 		}
@@ -978,7 +1060,7 @@ async function run({ github, context, core }, opts = {}) {
 		// list must be complete: count-consistent with pr.commits, within the
 		// documented 250-commit endpoint cap, unique, valid and including the
 		// expected head (R2).
-		const commits = await api.listPrCommits(pr.number);
+		const commits = await api.listPrCommits(boundPrNumber);
 		const commitsValidation = validatePrCommits(commits, pr.commits, headSha);
 		if (!commitsValidation.ok) {
 			if (isSafeId(pr.commits) && pr.commits > EXPECTED.MAX_PR_COMMITS) {
@@ -1010,7 +1092,7 @@ async function run({ github, context, core }, opts = {}) {
 		}
 
 		// 5. File list policy.
-		const files = await api.listPrFiles(pr.number);
+		const files = await api.listPrFiles(boundPrNumber);
 		const fileList = validateFileList(files, pr.changed_files);
 		if (!fileList.ok) {
 			return finish('unsupported-policy', fileList.reason, audit, core, false);
@@ -1072,8 +1154,8 @@ async function run({ github, context, core }, opts = {}) {
 				false,
 			);
 		}
-		const freshPr = await api.getPr(pr.number);
-		const prRecheck = validatePrObject(freshPr, headSha);
+		const freshPr = await api.getPr(boundPrNumber);
+		const prRecheck = validatePrObject(freshPr, headSha, boundPrNumber);
 		if (!prRecheck.ok) {
 			return finish('skip', prRecheck.reason, audit, core, false);
 		}
@@ -1153,15 +1235,16 @@ async function run({ github, context, core }, opts = {}) {
 			audit.reason = changeSummary;
 			return finish(
 				'merge-decision',
-				`AUDIT MODE (enabled=false): would merge #${pr.number} at ${headSha} — ${changeSummary}`,
+				`AUDIT MODE (enabled=false): would merge #${boundPrNumber} at ${headSha} — ${changeSummary}`,
 				audit,
 				core,
 				false,
 			);
 		}
 
-		// 11. SHA-bound squash merge and readback.
-		const mergeResponse = await api.mergePr(pr.number, headSha, config.mergeMethod);
+		// 11. SHA-bound squash merge and readback. The mutation uses the same
+		// bound PR number that every validation ran against (N2-R3).
+		const mergeResponse = await api.mergePr(boundPrNumber, headSha, config.mergeMethod);
 		if (!mergeResponse || mergeResponse.merged !== true) {
 			return finish('error', 'merge response did not confirm success', audit, core, true);
 		}
@@ -1175,13 +1258,13 @@ async function run({ github, context, core }, opts = {}) {
 			);
 		}
 		audit.mergeCommitSha = mergeResponse.sha;
-		const mergedPr = await api.getPr(pr.number);
+		const mergedPr = await api.getPr(boundPrNumber);
 		if (mergedPr.merged !== true) {
 			return finish('error', 'merge readback: PR is not merged', audit, core, true);
 		}
 		if (
 			!mergedPr ||
-			mergedPr.number !== pr.number ||
+			mergedPr.number !== boundPrNumber ||
 			!mergedPr.base ||
 			!mergedPr.base.repo ||
 			mergedPr.base.repo.id !== EXPECTED.REPO_ID
@@ -1206,17 +1289,19 @@ async function run({ github, context, core }, opts = {}) {
 		audit.reason = changeSummary;
 		return finish(
 			'merged',
-			`merged #${pr.number} at ${headSha} (merge commit ${mergeResponse.sha}) — ${changeSummary}`,
+			`merged #${boundPrNumber} at ${headSha} (merge commit ${mergeResponse.sha}) — ${changeSummary}`,
 			audit,
 			core,
 			false,
 		);
 	} catch (error) {
-		// Fixed error categories only: for controller-internal errors the
-		// authored route message (sanitized) is kept; for any foreign error
-		// only the error name and a numeric HTTP status are logged. Raw
-		// messages, response bodies, JSON fragments and token snippets never
-		// reach logs, summary or setFailed.
+		// Fixed error categories only: controller-internal errors keep their
+		// authored route message (sanitized); any foreign error is mapped to
+		// a single fixed category. No error.name, message, request or
+		// response field is ever taken over — a validated numeric HTTP status
+		// is the only additional datum (N2-R7). Raw messages, response
+		// bodies, JSON fragments and token snippets never reach logs,
+		// summary or setFailed.
 		let detail;
 		if (error instanceof ControllerError) {
 			detail = `fail closed: ${sanitizeDetail(error.message)}`;
@@ -1225,9 +1310,7 @@ async function run({ github, context, core }, opts = {}) {
 				error && isSafeId(error.status) && error.status >= 100 && error.status <= 599
 					? ` (HTTP ${error.status})`
 					: '';
-			const name =
-				error && typeof error.name === 'string' && error.name !== '' ? sanitizeDetail(error.name, 60) : 'Error';
-			detail = `fail closed: ${name}${status}`;
+			detail = `fail closed: unexpected error${status}`;
 		}
 		return finish('error', detail, audit, core, true);
 	}
@@ -1237,26 +1320,42 @@ async function run({ github, context, core }, opts = {}) {
  * Full PR validation on an already-fetched PR object. Used both for the
  * initial validation and immediately before the merge decision/mutation so
  * the complete PR/repo/base/author/head invariant holds at mutation time.
+ * The PR number of the fresh response must exactly match the bound number
+ * of the resolved candidate (N2-R3): initial and final validation are both
+ * bound to the same constant the mutation later uses.
  *
  * @param {object} fresh - freshly fetched pull request object
  * @param {string} headSha - expected head SHA
+ * @param {number} expectedNumber - bound PR number of the resolved candidate
  */
-function validatePrObject(fresh, headSha) {
+function validatePrObject(fresh, headSha, expectedNumber) {
 	if (!fresh || typeof fresh !== 'object') {
 		return { ok: false, reason: 'pr: missing' };
 	}
 	if (fresh.merged === true) {
 		return { ok: false, reason: 'pr is already merged — idempotent skip' };
 	}
+	// The expected number is the bound identity of the resolved candidate.
+	if (!isSafeId(expectedNumber) || expectedNumber <= 0) {
+		return { ok: false, reason: 'pr: bound pull request number is missing or not a safe positive integer' };
+	}
 	// pr.number is a mandatory field: API paths are built from it.
 	if (!isSafeId(fresh.number) || fresh.number <= 0) {
 		return { ok: false, reason: 'pr: number is missing or not a safe positive integer' };
 	}
-	if (fresh.state !== 'open') {
-		return { ok: false, reason: `pr is "${fresh.state}", not open` };
+	// A fresh response for any other PR than the bound candidate fails
+	// closed; the number is never re-derived from a response (N2-R3).
+	if (fresh.number !== expectedNumber) {
+		return { ok: false, reason: 'pr: number does not match the bound pull request number' };
 	}
-	if (fresh.draft === true) {
-		return { ok: false, reason: 'pr is a draft' };
+	if (fresh.state !== 'open') {
+		// Fixed category: never echo the (unvalidated) state value (N2-R7).
+		return { ok: false, reason: 'pr state is not open' };
+	}
+	// Only an explicit boolean false confirms a non-draft PR. Missing, null
+	// or differently typed draft values are unknown and fail closed (N2-R3).
+	if (fresh.draft !== false) {
+		return { ok: false, reason: 'pr draft status is unknown (missing, null or not the boolean false)' };
 	}
 	if (fresh.base == null || typeof fresh.base !== 'object') {
 		return { ok: false, reason: `pr base is not ${EXPECTED.BASE_REF} in repository ${EXPECTED.REPO_ID}` };
@@ -1277,7 +1376,8 @@ function validatePrObject(fresh, headSha) {
 		return { ok: false, reason: 'pr head is not a same-repository head' };
 	}
 	if (fresh.head.sha !== headSha) {
-		return { ok: false, reason: `pr head ${fresh.head.sha} does not match triggering run head ${headSha}` };
+		// Fixed category: never echo the (unvalidated) head value (N2-R7).
+		return { ok: false, reason: 'pr head does not match triggering run head' };
 	}
 	const identity = validatePrIdentity(fresh);
 	if (!identity.ok) {
@@ -1287,15 +1387,17 @@ function validatePrObject(fresh, headSha) {
 }
 
 /**
- * Fetch a fresh PR state and run the full validation on it.
+ * Fetch a fresh PR state for the bound candidate number and run the full
+ * validation on it. The fetched response must carry exactly the bound
+ * number; a response for any other PR fails closed (N2-R3).
  *
  * @param {object} api - API adapter
- * @param {object} pr - candidate PR object (only number is used)
+ * @param {number} expectedNumber - bound PR number of the resolved candidate
  * @param {string} headSha - expected head SHA
  */
-async function validatePr(api, pr, headSha) {
-	const fresh = await api.getPr(pr.number);
-	return validatePrObject(fresh, headSha);
+async function validatePr(api, expectedNumber, headSha) {
+	const fresh = await api.getPr(expectedNumber);
+	return validatePrObject(fresh, headSha, expectedNumber);
 }
 
 function finish(result, reason, audit, core, failed) {
@@ -1347,6 +1449,7 @@ module.exports = {
 		validatePrObject,
 		validateTriggerRun,
 		validateChecks,
+		strictBase64,
 	},
 	EXPECTED,
 	ControllerError,
