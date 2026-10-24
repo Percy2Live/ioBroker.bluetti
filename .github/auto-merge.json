@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "enabled": false,
+  "mergeMethod": "squash",
+  "npm": {
+    "production": ["patch"],
+    "development": ["patch", "minor"]
+  }
+}
