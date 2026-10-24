@@ -1,35 +1,69 @@
-# Workflow for auto-merging Dependabot PRs
-# This workflow uses the action-automerge-dependabot action to automatically merge
-# Dependabot PRs based on the rules defined in .github/auto-merge.yml
+# Trusted auto-merge controller for Dependabot PRs.
+#
+# Replaces the former privileged PR-trigger workflow (and the incompatible
+# .github/auto-merge.yml configuration of the ioBroker action) with a
+# `workflow_run` controller that runs exclusively from the default branch:
+# code, script and configuration are checked out from the controller run's
+# SHA on main. Pull request content is consumed as JSON data only — never
+# checked out, executed, interpolated or installed in this privileged job.
+#
+# Bootstrap mode: enabled=false in .github/auto-merge.json means this
+# controller takes audit decisions with ZERO writes. Activation requires a
+# separate reviewed change of that configuration file.
 
 name: Auto-Merge Dependabot PRs
 
 on:
-  # Trigger when a PR is opened or updated
-  # WARNING: This needs to be run in the PR base, DO NOT build untrusted code in this action
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: ['Test and Release']
+    types: [completed]
+
+# The workflow itself gets no permissions; only the controller job does.
+permissions: {}
+
+# One controller execution per triggering PR head. Never cancel an
+# in-flight audit/merge attempt for the same head.
+concurrency:
+  group: automerge-dependabot-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
 
 jobs:
-  auto-merge:
+  automerge:
+    name: Audit and merge eligible Dependabot PRs
+    # Cheap pre-filter only; every gate is re-validated from fresh API data
+    # inside the controller (fail closed).
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    # Only run if actor is dependabot
-    if: github.actor == 'dependabot[bot]'
-    
+    timeout-minutes: 5
     permissions:
+      # squash merge of the validated PR head
       contents: write
+      # fresh reads of the PR state
       pull-requests: write
-      
+      # fresh read of the triggering run
+      actions: read
+      # fresh read of current check runs for the expected head
+      checks: read
     steps:
-      - name: Auto-merge Dependabot PRs
-        uses: iobroker-bot-orga/action-automerge-dependabot@v1
+      - name: Checkout trusted main at the controller run SHA
+        # actions/checkout v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: Path to your auto-merge configuration file
-          # config-file-path: '.github/auto-merge.yml'
-          # Optional: Merge method (merge, squash, or rebase)
-          # merge-method: 'squash'
-          # Optional: Wait for other checks to complete
-          # wait-for-checks: 'true'
-          # Optional: Maximum time to wait for checks in seconds (default: 3600)
-          # max-wait-time: '3600'
+          repository: Percy2Live/ioBroker.bluetti
+          # SHA of this workflow_run controller run on the default branch —
+          # never the PR head, the merge ref or a fork repository.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Run dependabot automerge controller
+        # actions/github-script v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          # The script hands github/context/core to the trusted local module.
+          # No PR metadata is interpolated into this script.
+          script: |
+            const controller = require('./.github/scripts/dependabot-automerge.cjs');
+            await controller.run({ github, context, core });

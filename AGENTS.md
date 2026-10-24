@@ -43,6 +43,26 @@ fixen, neu pushen. Wenn nach zwei Fix-Versuchen weiter rot: PR offen lassen und
 Pascal per Telegram melden, mit dem konkreten Fehler — nicht raten und weiter
 draufpatchen.
 
+## Auto-Merge für Dependabot — Trust-Grenzen (Review vor Arming)
+
+`.github/workflows/automerge-dependabot.yml` ist ein `workflow_run`-Controller,
+der ausschließlich mit Code/Konfiguration aus trusted `main` läuft (Checkout des
+Controller-Run-SHA, nie PR-Head/Fork). PR-Inhalte werden nur als JSON-Daten
+gelesen, nie ausgeführt oder interpoliert. PR-Tests (`test-and-release.yml`)
+sind explizit read-only (`contents: read`); Deploy bleibt tag-only.
+
+Entscheidungen trifft `.github/scripts/dependabot-automerge.cjs` strikt fail
+closed nach `.github/auto-merge.json`: nur same-repo-Dependabot-PRs mit
+verifizierten Commits, exaktem Head, echten Required-Checks und konservativer
+npm-Policy (Production patch, Development patch/minor). Alles andere bleibt im
+reviewten Hermes-Weg.
+
+`enabled: false` = Audit-Modus: vollständige Prüfung, null Writes. Aktivierung
+von `enabled: true` nur über einen separaten, vor Arming unabhängig reviewten
+PR. Bootstrap-/Aktivierungs-PRs vor Auto-Merge-Arming immer erst reviewen
+lassen (GitHub verlangt aktuell 0 Approvals); neuer Head = neuer Review. Keine
+Abschwächung der Branch Protection, kein PAT, kein `pull_request_target`.
+
 ## Secrets
 Keine Tokens/Keys in Code, Commits oder PR-Beschreibungen. BLUETTI-OAuth-
 Credentials kommen zur Laufzeit aus der Adapter-Config, nie hartkodiert.
