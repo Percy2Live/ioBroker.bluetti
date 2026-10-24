@@ -2013,6 +2013,116 @@ test('skip: check job and check-run status values are never echoed (N2-R7)', asy
 	assert.equal(emitted.includes('SYNTHETIC-N2-CANARY'), false, 'status canary leaked');
 });
 
+/* ----------------------------------------------------------------------
+ * N4-R7: audit metadata is typed, validated and fail closed
+ * ---------------------------------------------------------------------- */
+
+const N4_CANARY = 'SYNTHETIC-N4-CANARY\nraw response';
+
+test('skip: invalid run_attempt is never adopted into the audit (N4-R7)', async () => {
+	for (const attempt of [undefined, null, '1', N4_CANARY, 0, 1.5, -1]) {
+		const scenario = { run: makeRun({ run_attempt: attempt }), fileContents: defaultFiles() };
+		const { result, writes, core } = await runScenario({ scenario, enabled: false });
+		assert.equal(result.result, 'skip', result.reason);
+		assert.match(result.reason, /run_attempt/);
+		// The rejected value must not be adopted: the audit attempt stays
+		// unknown and never reaches any output channel.
+		assert.equal(result.audit.attempt, null, 'rejected attempt was adopted into the audit');
+		assert.equal(emittedText(result, core).includes('SYNTHETIC-N4-CANARY'), false, 'attempt canary leaked');
+		assert.equal(writes.length, 0);
+	}
+});
+
+test('skip: invalid controller run SHA fails closed before a merge decision (N4-R7)', async () => {
+	for (const sha of [undefined, null, 'short', 'X'.repeat(40), N4_CANARY]) {
+		const { result, writes, core } = await runScenario({
+			scenario: { fileContents: defaultFiles() },
+			enabled: false,
+			context: { sha },
+		});
+		assert.equal(result.result, 'skip', result.reason);
+		assert.match(result.reason, /controller: run SHA/);
+		assert.equal(result.audit.controllerSha, null, 'invalid controller SHA was adopted');
+		// info, summary and setFailed are inspected separately; none may
+		// contain the raw (unvalidated) SHA value.
+		assert.equal(result.reason.includes('SYNTHETIC-N4-CANARY'), false, 'canary in reason');
+		assert.equal(core.__info.join('\n').includes('SYNTHETIC-N4-CANARY'), false, 'canary in info');
+		assert.equal(core.__summaries.join('').includes('SYNTHETIC-N4-CANARY'), false, 'canary in summary');
+		assert.equal(core.__failures.join('\n').includes('SYNTHETIC-N4-CANARY'), false, 'canary in setFailed');
+		assert.match(core.__summaries.join(''), /Controller SHA: n\/a/);
+		assert.equal(writes.length, 0);
+	}
+});
+
+test('skip: invalid controller SHA blocks the fake-enabled merge path too (N4-R7)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: { fileContents: defaultFiles() },
+		enabled: true,
+		context: { sha: N4_CANARY },
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.equal(writes.length, 0, 'no merge mutation without a validated controller SHA');
+});
+
+test('audit output: valid metadata is preserved in info, summary and setFailed (N4-R7)', async () => {
+	const { result, core } = await runScenario({ scenario: { fileContents: defaultFiles() }, enabled: false });
+	assert.equal(result.result, 'merge-decision', result.reason);
+	const summary = core.__summaries.join('');
+	assert.match(summary, new RegExp(`Triggering run: ${RUN_ID} \\(attempt 1\\)`));
+	assert.match(summary, new RegExp(`Controller SHA: ${CONTROLLER_SHA}`));
+	assert.match(summary, /PR: #188/);
+	assert.match(summary, new RegExp(`Validated head: ${HEAD}`));
+	assert.match(summary, new RegExp(`Base: main @ ${BASE} \\(merge-base ${MERGEBASE}\\)`));
+	assert.match(summary, /check-and-lint=completed\/success/);
+	// The info channel mirrors the summary exactly.
+	assert.equal(core.__info.length, 1);
+	assert.equal(core.__info[0], summary);
+	// A skip/decision path never calls setFailed.
+	assert.equal(core.__failures.length, 0);
+});
+
+test('audit output: early skip paths render unknown fields as the fixed n/a representation (N4-R7)', async () => {
+	const { result, writes, core } = await runScenario({
+		scenario: { fileContents: defaultFiles() },
+		enabled: false,
+		context: { eventName: 'pull_request' },
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	const summary = core.__summaries.join('');
+	assert.match(summary, /Triggering run: n\/a/);
+	assert.match(summary, /Controller SHA: n\/a/);
+	assert.match(summary, /PR: none/);
+	assert.match(summary, /Validated head: n\/a/);
+	assert.match(summary, /Required checks: n\/a/);
+	assert.equal(core.__failures.length, 0);
+	assert.equal(writes.length, 0);
+});
+
+test('error: setFailed keeps the fixed category and the allowed numeric HTTP status (N4-R7)', async () => {
+	const foreign = new Error('hidden canary message');
+	foreign.status = 502;
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			// The failure happens AFTER the run metadata was validated and
+			// adopted, so the error path must still project it safely.
+			openPrs: () => {
+				throw foreign;
+			},
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	// The allowed numeric HTTP status is preserved, the raw message is not.
+	assert.equal(result.reason, 'fail closed: unexpected error (HTTP 502)');
+	assert.equal(core.__failures.length, 1);
+	assert.match(core.__failures[0], /^dependabot-automerge: error: fail closed: unexpected error \(HTTP 502\)$/);
+	// Already-validated audit metadata survives on the error path.
+	assert.match(core.__summaries.join(''), new RegExp(`Triggering run: ${RUN_ID} \\(attempt 1\\)`));
+	assert.match(core.__summaries.join(''), new RegExp(`Controller SHA: ${CONTROLLER_SHA}`));
+	assert.equal(writes.length, 0);
+});
+
 /* ---------------------------------------------------------------------- */
 /* N2-D1: strict base64 / UTF-8 decoding                                    */
 /* ---------------------------------------------------------------------- */
@@ -2086,6 +2196,130 @@ test('audit mode: legitimate line-wrapped base64 content still reaches a merge-d
 	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
 	assert.equal(result.result, 'merge-decision', result.reason);
 	assert.equal(writes.length, 0);
+});
+
+/* ----------------------------------------------------------------------
+ * N4-D1: canonical base64 zero pad bits
+ * ---------------------------------------------------------------------- */
+
+// Base64 alphabet for pad-bit mutations: index -> character.
+const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * Build a JSON payload (the lockfile plus trailing spaces) whose byte length
+ * has the requested `size % 3` remainder, so both padding shapes can be
+ * exercised with still-valid JSON.
+ *
+ * @param {number} remainder - desired `size % 3` remainder (0, 1 or 2)
+ */
+function paddedRawLockfile(remainder) {
+	let raw = JSON.stringify(LOCKFILE);
+	while (Buffer.byteLength(raw) % 3 !== remainder) {
+		raw += ' ';
+	}
+	return raw;
+}
+
+test('strict base64: every non-zero pad-bit variant is rejected for both padding shapes (N4-D1)', () => {
+	for (const remainder of [1, 2]) {
+		const raw = paddedRawLockfile(remainder);
+		const size = Buffer.byteLength(raw);
+		const canonical = Buffer.from(raw).toString('base64');
+		// The canonical representation itself passes.
+		assert.equal(pure.strictBase64(canonical, size), canonical, `canonical size%3==${remainder}`);
+		// Enumerate ALL non-zero values of the unused low-order bits of the
+		// last payload character. Each mutant is a different representation
+		// of exactly the same decoded bytes — the canonicality requirement
+		// (RFC 4648 §3.5) is what rejects them, not length or padding count.
+		const padding = remainder === 1 ? '==' : '=';
+		const lastPayloadIndex = canonical.length - padding.length - 1;
+		const lastValue = B64_ALPHABET.indexOf(canonical[lastPayloadIndex]);
+		const unusedBits = remainder === 1 ? 4 : 2;
+		const variants = (1 << unusedBits) - 1;
+		for (let delta = 1; delta <= variants; delta += 1) {
+			const mutantValue = lastValue ^ delta;
+			// Only in-alphabet characters can appear at all; values with set
+			// bits beyond the alphabet size are not representable mutations.
+			if (mutantValue >= 64) {
+				continue;
+			}
+			const mutant =
+				canonical.slice(0, lastPayloadIndex) +
+				B64_ALPHABET[mutantValue] +
+				canonical.slice(lastPayloadIndex + 1);
+			assert.notEqual(mutant, canonical, 'mutation is a no-op');
+			// Proof of the equivalence: same decoded bytes, different text.
+			assert.equal(
+				Buffer.from(mutant, 'base64').toString('base64'),
+				canonical,
+				'mutant does not decode to the same bytes',
+			);
+			assert.equal(pure.strictBase64(mutant, size), null, `non-canonical pad bits accepted (delta ${delta})`);
+		}
+	}
+});
+
+test('strict base64: canonical unpadded representations are unaffected (N4-D1)', () => {
+	const raw = paddedRawLockfile(0);
+	const size = Buffer.byteLength(raw);
+	const canonical = Buffer.from(raw).toString('base64');
+	assert.equal(canonical.endsWith('='), false, 'control payload must be unpadded');
+	assert.equal(pure.strictBase64(canonical, size), canonical, 'canonical unpadded representation');
+	// An unpadded representation has no unused bits: changing the last
+	// character changes the decoded BYTES (it is not a pad-bit variant), so
+	// the pure representation validator correctly has no canonicality
+	// complaint at this level — the different bytes fail later, through the
+	// size/JSON consistency of the decoded content.
+	const mutant = canonical.slice(0, -1) + B64_ALPHABET[(B64_ALPHABET.indexOf(canonical.slice(-1)) + 1) % 64];
+	assert.notEqual(Buffer.from(mutant, 'base64').toString('base64'), canonical, 'mutant changed no bytes');
+	assert.equal(pure.strictBase64(mutant, size), mutant, 'unpadded form must not be rejected as non-canonical');
+});
+
+test('audit mode: canonical lockfile representations of all three padding shapes reach merge-decision (N4-D1)', async () => {
+	for (const remainder of [0, 1, 2]) {
+		const raw = paddedRawLockfile(remainder);
+		const canonical = Buffer.from(raw).toString('base64');
+		const files = defaultFiles();
+		files[`package-lock.json@${HEAD}`] = { b64: canonical, size: Buffer.byteLength(raw) };
+		const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+		assert.equal(result.result, 'merge-decision', result.reason);
+		assert.equal(writes.length, 0);
+	}
+});
+
+test('audit mode: canonical line-wrapped base64 with padding still reaches merge-decision (N4-D1)', async () => {
+	const raw = paddedRawLockfile(1);
+	const canonical = Buffer.from(raw).toString('base64');
+	const files = defaultFiles();
+	files[`package-lock.json@${HEAD}`] = {
+		b64: canonical.replace(/(.{60})/g, '$1\r\n'),
+		size: Buffer.byteLength(raw),
+	};
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'merge-decision', result.reason);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: non-canonical pad bits never reach a merge decision (N4-D1)', async () => {
+	for (const remainder of [1, 2]) {
+		const raw = paddedRawLockfile(remainder);
+		const size = Buffer.byteLength(raw);
+		const canonical = Buffer.from(raw).toString('base64');
+		const padding = remainder === 1 ? '==' : '=';
+		const lastPayloadIndex = canonical.length - padding.length - 1;
+		const mutantValue = B64_ALPHABET.indexOf(canonical[lastPayloadIndex]) ^ 1;
+		const mutant =
+			canonical.slice(0, lastPayloadIndex) + B64_ALPHABET[mutantValue] + canonical.slice(lastPayloadIndex + 1);
+		// The orchestration input decodes to the very same bytes; only the
+		// representation differs (the exact N4 counterexample shape).
+		assert.equal(Buffer.from(mutant, 'base64').toString('base64'), canonical);
+		const files = defaultFiles();
+		files[`package-lock.json@${HEAD}`] = { b64: mutant, size };
+		const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+		assert.equal(result.result, 'unsupported-policy', result.reason);
+		assert.match(result.reason, /base64/);
+		assert.equal(writes.length, 0);
+	}
 });
 
 /* ---------------------------------------------------------------------- */

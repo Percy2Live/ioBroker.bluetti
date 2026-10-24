@@ -736,7 +736,9 @@ function validateChecks(jobs, headCheckRuns, suiteId, headSha) {
  *  - Only base64 alphabet characters plus legitimate GitHub line wrapping
  *    (CR/LF) are allowed; every other character fails.
  *  - Padding is only allowed at the very end and must be exactly the padding
- *    implied by the reported byte size (none, '=' or '==').
+ *    implied by the reported byte size (none, '=' or '=='); the unused
+ *    low-order bits of the last payload character must be zero, so only the
+ *    canonical representation of the bytes is accepted (RFC 4648 §3.5).
  *  - The normalized length must be exactly the padded base64 length of the
  *    reported size, so truncation, padding tricks and size drift fail.
  *  - The raw representation is bounded (at most one line break per payload
@@ -774,7 +776,45 @@ function strictBase64(content, size) {
 	if (!/^[A-Za-z0-9+/]+$/.test(body)) {
 		return null;
 	}
+	// Canonical representation (RFC 4648 §3.5): the unused low-order bits of
+	// the last payload character must be zero. Non-zero pad bits produce
+	// alternative representations of identical decoded bytes — Buffer.from
+	// silently ignores them — so they are rejected here with a cheap
+	// character lookup before any decoding allocation (N4-D1).
+	if (expectedPadding !== '') {
+		const lastValue = base64CharValue(body.charCodeAt(body.length - 1));
+		const unusedBits = expectedPadding === '==' ? 4 : 2;
+		if (lastValue < 0 || (lastValue & ((1 << unusedBits) - 1)) !== 0) {
+			return null;
+		}
+	}
 	return normalized;
+}
+
+/**
+ * Six-bit value of a base64 alphabet character code, or -1 for any character
+ * outside the alphabet. Used for the canonical zero-pad-bit check without a
+ * lookup table allocation (N4-D1).
+ *
+ * @param {number} charCode - character code of a base64 alphabet character
+ */
+function base64CharValue(charCode) {
+	if (charCode >= 65 /* A */ && charCode <= 90 /* Z */) {
+		return charCode - 65;
+	}
+	if (charCode >= 97 /* a */ && charCode <= 122 /* z */) {
+		return charCode - 97 + 26;
+	}
+	if (charCode >= 48 /* 0 */ && charCode <= 57 /* 9 */) {
+		return charCode - 48 + 52;
+	}
+	if (charCode === 43 /* + */) {
+		return 62;
+	}
+	if (charCode === 47 /* / */) {
+		return 63;
+	}
+	return -1;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1000,13 +1040,23 @@ async function run({ github, context, core }, opts = {}) {
 		if (runData.id !== payloadRun.id) {
 			return finish('skip', 'fresh run id does not match the payload run id', audit, core, false);
 		}
-		audit.triggerRunId = runData.id;
-		audit.attempt = runData.run_attempt;
-		audit.controllerSha = context.sha;
 		const runValidation = validateTriggerRun(runData);
 		if (!runValidation.ok) {
 			return finish('skip', runValidation.reason, audit, core, false);
 		}
+		// Audit metadata is adopted ONLY after validation (N4-R7): values
+		// rejected by validateTriggerRun never reach logs, the job summary
+		// or setFailed.
+		audit.triggerRunId = runData.id;
+		audit.attempt = runData.run_attempt;
+		// The controller run SHA is the provenance of this decision: without
+		// a valid SHA the controller cannot prove which code decided, so it
+		// fails closed before any merge decision instead of auditing an
+		// unknown controller (N4-R7).
+		if (!isSha(context.sha)) {
+			return finish('skip', 'controller: run SHA is missing or not a valid 40-char SHA', audit, core, false);
+		}
+		audit.controllerSha = context.sha;
 		if (payloadRun.run_attempt !== runData.run_attempt) {
 			return finish('skip', 'payload attempt does not match the fresh run attempt', audit, core, false);
 		}
@@ -1400,24 +1450,86 @@ async function validatePr(api, expectedNumber, headSha) {
 	return validatePrObject(fresh, headSha, expectedNumber);
 }
 
+/**
+ * Result categories the controller itself may emit. Any other value is a
+ * programming error and is never echoed; the fixed 'error' category is used
+ * instead (N4-R7).
+ */
+const AUDIT_RESULT_CATEGORIES = ['skip', 'unsupported-policy', 'merge-decision', 'merged', 'error'];
+
+/**
+ * Explicitly typed projection of every audit field that reaches logs, the
+ * job summary or setFailed. Each field is either a validated instance of its
+ * expected type or null; unknown/invalid values NEVER pass through raw
+ * string coercion or serialization — the caller renders the fixed 'n/a'
+ * representation instead (N4-R7).
+ *
+ *  - IDs (run, PR) must be safe positive integers.
+ *  - The attempt must be a safe integer >= 1.
+ *  - SHAs must be valid 40-char hex strings.
+ *  - Check results must be one of the controller's own fixed categories.
+ *
+ * @param {object} audit - audit state as accumulated by run()
+ */
+function projectAudit(audit) {
+	const source = audit && typeof audit === 'object' ? audit : {};
+	const safeId = value => (isSafeId(value) && value > 0 ? value : null);
+	const safeAttempt = value => (isSafeId(value) && value >= 1 ? value : null);
+	const safeSha = value => (isSha(value) ? value : null);
+	// Only the controller's own fixed check category passes; any other
+	// status/conclusion combination is unknown and never echoed.
+	const safeCheckResult = value => (value === 'completed/success' ? value : null);
+	const rawJobResults =
+		source.jobResults && typeof source.jobResults === 'object' && !Array.isArray(source.jobResults)
+			? source.jobResults
+			: {};
+	const jobResults = {};
+	for (const name of EXPECTED.REQUIRED_CHECKS) {
+		jobResults[name] = safeCheckResult(rawJobResults[name]);
+	}
+	return {
+		triggerRunId: safeId(source.triggerRunId),
+		attempt: safeAttempt(source.attempt),
+		controllerSha: safeSha(source.controllerSha),
+		prNumber: safeId(source.prNumber),
+		head: safeSha(source.head),
+		baseSha: safeSha(source.baseSha),
+		mergeBase: safeSha(source.mergeBase),
+		mergeCommitSha: safeSha(source.mergeCommitSha),
+		jobResults,
+	};
+}
+
 function finish(result, reason, audit, core, failed) {
-	audit.result = result;
+	// The result itself is an authored category: an unexpected value is
+	// mapped to the fixed 'error' category, never echoed raw (N4-R7).
+	const resultCategory = AUDIT_RESULT_CATEGORIES.includes(result) ? result : 'error';
+	audit.result = resultCategory;
+	// Central typed output projection of ALL audit fields (N4-R7): every
+	// interpolated value is validated here; unknown/invalid fields become
+	// the fixed 'n/a' representation.
+	const p = projectAudit(audit);
 	// All details are sanitized: control characters are stripped so that
 	// injected newlines cannot forge summary lines, and the length is capped.
 	const detail = sanitizeDetail(reason);
+	const checkLine = EXPECTED.REQUIRED_CHECKS.every(name => p.jobResults[name] == null)
+		? 'n/a'
+		: EXPECTED.REQUIRED_CHECKS.map(
+				name => `${name}=${p.jobResults[name] == null ? 'n/a' : p.jobResults[name]}`,
+			).join('; ');
 	const lines = [
 		'## Dependabot Auto-Merge Audit',
-		`- Triggering run: ${audit.triggerRunId == null ? 'n/a' : audit.triggerRunId}${audit.attempt == null ? '' : ` (attempt ${audit.attempt})`}`,
-		`- Controller SHA: ${audit.controllerSha == null ? 'n/a' : audit.controllerSha}`,
-		`- PR: ${audit.prNumber == null ? 'none' : `#${audit.prNumber}`}`,
-		`- Validated head: ${audit.head == null ? 'n/a' : audit.head}`,
-		`- Base: ${audit.baseSha == null ? 'n/a' : `${EXPECTED.BASE_REF} @ ${audit.baseSha}`} (merge-base ${audit.mergeBase == null ? 'n/a' : audit.mergeBase})`,
-		`- Required checks: ${Object.keys(audit.jobResults).length === 0 ? 'n/a' : EXPECTED.REQUIRED_CHECKS.map(name => `${name}=${audit.jobResults[name] || 'n/a'}`).join('; ')}`,
-		`- Result: ${result}`,
+		`- Triggering run: ${p.triggerRunId == null ? 'n/a' : p.triggerRunId}${p.attempt == null ? '' : ` (attempt ${p.attempt})`}`,
+		`- Controller SHA: ${p.controllerSha == null ? 'n/a' : p.controllerSha}`,
+		`- PR: ${p.prNumber == null ? 'none' : `#${p.prNumber}`}`,
+		`- Validated head: ${p.head == null ? 'n/a' : p.head}`,
+		`- Base: ${p.baseSha == null ? 'n/a' : `${EXPECTED.BASE_REF} @ ${p.baseSha}`} (merge-base ${p.mergeBase == null ? 'n/a' : p.mergeBase})`,
+		`- Required checks: ${checkLine}`,
+		`- Result: ${resultCategory}`,
 		`- Detail: ${detail}`,
 	];
-	if (audit.mergeCommitSha) {
-		lines.push(`- Merge commit: ${audit.mergeCommitSha}`);
+	if (p.mergeCommitSha != null) {
+		lines.push(`- Merge commit: ${p.mergeCommitSha}`);
 	}
 	const summary = `${lines.join('\n')}\n`;
 	core.info(summary);
@@ -1426,9 +1538,9 @@ function finish(result, reason, audit, core, failed) {
 		core.summary.write();
 	}
 	if (failed) {
-		core.setFailed(`dependabot-automerge: ${result}: ${detail}`);
+		core.setFailed(`dependabot-automerge: ${resultCategory}: ${detail}`);
 	}
-	return { result, reason: detail, audit };
+	return { result: resultCategory, reason: detail, audit };
 }
 
 module.exports = {
