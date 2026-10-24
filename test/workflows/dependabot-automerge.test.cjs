@@ -25,9 +25,12 @@ const REPO_ID = 1284294352;
 const RUN_ID = 4242;
 const SUITE_ID = 999;
 const HEAD = `a${'0'.repeat(39)}`;
-const BASE = `b${'0'.repeat(39)}`;
 const MERGEBASE = `c${'0'.repeat(39)}`;
 const MAIN = `8ab2ecf5b09954d741d36fdfc3b1b22771158649`;
+// For a same-repository PR against main the PR base SHA is the current head
+// of the base branch; the controller enforces this invariant, so the default
+// fixtures use the same SHA for both.
+const BASE = MAIN;
 const CONTROLLER_SHA = `d${'0'.repeat(39)}`;
 const OTHER_SHA = `f${'0'.repeat(39)}`;
 const MERGE_SHA = `9${'0'.repeat(39)}`;
@@ -62,6 +65,7 @@ function makePr(overrides = {}) {
 		mergeable: true,
 		mergeable_state: 'clean',
 		changed_files: 2,
+		commits: 1,
 		title: 'chore(deps-dev): bump test fixture',
 		base: { ref: 'main', sha: BASE, repo: { id: REPO_ID } },
 		head: { sha: HEAD, ref: 'dependabot/npm_and_yarn/fixture-22.20.6', repo: { id: REPO_ID } },
@@ -73,32 +77,40 @@ function makePr(overrides = {}) {
 
 function makeCommit(overrides = {}) {
 	return {
-		sha: `e${'0'.repeat(39)}`,
+		// By default the single commit IS the PR head, as a one-commit
+		// Dependabot PR reports.
+		sha: HEAD,
 		author: { id: 49699333, login: 'dependabot[bot]', type: 'Bot' },
 		commit: { verification: { verified: true } },
 		...overrides,
 	};
 }
 
+// Job and check-run ids mirror the real required run 40049726187 of PR #191
+// (attempt 1): GitHub Actions uses the job id as the check-run id.
 const JOBS = [
-	{ name: 'check-and-lint', status: 'completed', conclusion: 'success' },
-	{ name: 'adapter-tests (22.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
-	{ name: 'adapter-tests (24.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
-	{ name: 'adapter-tests (26.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
-	{ name: 'adapter-tests (22.x, windows-latest)', status: 'completed', conclusion: 'success' },
-	{ name: 'adapter-tests (24.x, macos-latest)', status: 'completed', conclusion: 'success' },
+	{ id: 120739494003, name: 'check-and-lint', status: 'completed', conclusion: 'success' },
+	{ id: 120739667335, name: 'adapter-tests (22.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
+	{ id: 120739667235, name: 'adapter-tests (24.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
+	{ id: 120739667187, name: 'adapter-tests (26.x, ubuntu-latest)', status: 'completed', conclusion: 'success' },
+	{ id: 120739667228, name: 'adapter-tests (22.x, windows-latest)', status: 'completed', conclusion: 'success' },
+	{ id: 120739667236, name: 'adapter-tests (24.x, macos-latest)', status: 'completed', conclusion: 'success' },
 ];
 
 function makeCheckRuns(overrides = {}) {
-	return controller.EXPECTED.REQUIRED_CHECKS.map(name => ({
-		name,
-		head_sha: HEAD,
-		status: 'completed',
-		conclusion: 'success',
-		app: { id: 15368 },
-		check_suite: { id: SUITE_ID },
-		...(overrides[name] || {}),
-	}));
+	return controller.EXPECTED.REQUIRED_CHECKS.map(name => {
+		const job = JOBS.find(entry => entry.name === name);
+		return {
+			id: job ? job.id : 1,
+			name,
+			head_sha: HEAD,
+			status: 'completed',
+			conclusion: 'success',
+			app: { id: 15368 },
+			check_suite: { id: SUITE_ID },
+			...(overrides[name] || {}),
+		};
+	});
 }
 
 const FILES = [
@@ -126,10 +138,20 @@ const HEAD_MANIFEST = {
 	},
 };
 
+// Realistic lockfile root entry: mirrors the HEAD manifest's dependencies and
+// devDependencies exactly, the way npm writes packages[""].
 const LOCKFILE = {
 	lockfileVersion: 3,
 	packages: {
-		'': { name: 'iobroker.bluetti', version: '1.0.2' },
+		'': {
+			name: 'iobroker.bluetti',
+			version: '1.0.2',
+			dependencies: { '@iobroker/adapter-core': '^3.4.3' },
+			devDependencies: {
+				'@types/node': '^22.20.6',
+				'@types/iobroker': 'npm:@iobroker/types@^7.2.2',
+			},
+		},
 	},
 };
 
@@ -205,12 +227,12 @@ function makeFakeGithub(scenario = {}) {
 		readCounts[key] = count + 1;
 		return typeof value === 'function' ? value(count) : value;
 	}
-	function page(route, items) {
+	function page(route, items, params) {
 		const size = scenario.pageSize || 100;
-		const state = scenario.__pages || (scenario.__pages = {});
-		const current = state[route] || 1;
-		state[route] = current + 1;
-		return items.slice((current - 1) * size, current * size);
+		// The controller always starts a pagination at page 1, so the page
+		// number comes from the request itself; no cross-invocation counter.
+		const pageNumber = (params && params.page) || 1;
+		return items.slice((pageNumber - 1) * size, pageNumber * size);
 	}
 	function fileBody(entry) {
 		if (entry && typeof entry === 'object' && Object.prototype.hasOwnProperty.call(entry, 'raw')) {
@@ -234,16 +256,16 @@ function makeFakeGithub(scenario = {}) {
 				return { status: 200, data: next('run', makeRun()), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/pulls') {
-				return { status: 200, data: page('pulls', next('openPrs', [makePr()])), headers: {} };
+				return { status: 200, data: page('pulls', next('openPrs', [makePr()]), params), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}') {
 				return { status: 200, data: next('pr', makePr()), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}/commits') {
-				return { status: 200, data: page('commits', next('commits', [makeCommit()])), headers: {} };
+				return { status: 200, data: page('commits', next('commits', [makeCommit()]), params), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/pulls/{pull_number}/files') {
-				return { status: 200, data: page('files', next('files', FILES)), headers: {} };
+				return { status: 200, data: page('files', next('files', FILES), params), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/compare/{basehead}') {
 				return { status: 200, data: next('compare', { merge_base_commit: { sha: MERGEBASE } }), headers: {} };
@@ -262,12 +284,12 @@ function makeFakeGithub(scenario = {}) {
 				return { status: 200, data: fileBody(entry), headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs') {
-				return { status: 200, data: { jobs: page('jobs', next('jobs', JOBS)) }, headers: {} };
+				return { status: 200, data: { jobs: page('jobs', next('jobs', JOBS), params) }, headers: {} };
 			}
 			if (route === 'GET /repos/{owner}/{repo}/commits/{ref}/check-runs') {
 				return {
 					status: 200,
-					data: { check_runs: page('check-runs', next('checkRuns', makeCheckRuns())) },
+					data: { check_runs: page('check-runs', next('checkRuns', makeCheckRuns()), params) },
 					headers: {},
 				};
 			}
@@ -565,6 +587,38 @@ test('lockfile: root metadata must match the manifest', () => {
 	assert.equal(pure.validateLockfile(null, HEAD_MANIFEST).ok, false);
 });
 
+test('lockfile: root dependencies must mirror the manifest dependencies (R4)', () => {
+	// Outdated dev version in the lockfile root.
+	const staleDev = JSON.parse(JSON.stringify(LOCKFILE));
+	staleDev.packages[''].devDependencies['@types/node'] = '^22.20.5';
+	assert.equal(pure.validateLockfile(staleDev, HEAD_MANIFEST).ok, false, 'outdated root dev version');
+	// Additional dependency in the lockfile root.
+	const extra = JSON.parse(JSON.stringify(LOCKFILE));
+	extra.packages[''].devDependencies['left-pad'] = '^1.0.0';
+	assert.equal(pure.validateLockfile(extra, HEAD_MANIFEST).ok, false, 'extra root dependency');
+	// Missing root dependencies although the manifest has production deps.
+	const noDeps = JSON.parse(JSON.stringify(LOCKFILE));
+	delete noDeps.packages[''].dependencies;
+	assert.equal(pure.validateLockfile(noDeps, HEAD_MANIFEST).ok, false, 'missing root dependencies');
+	// Dependency shifted between prod/dev sections.
+	const shifted = JSON.parse(JSON.stringify(LOCKFILE));
+	delete shifted.packages[''].dependencies['@iobroker/adapter-core'];
+	shifted.packages[''].devDependencies['@iobroker/adapter-core'] = '^3.4.3';
+	assert.equal(pure.validateLockfile(shifted, HEAD_MANIFEST).ok, false, 'prod/dev shift');
+	// Alias entry with a changed version spec.
+	const aliasChanged = JSON.parse(JSON.stringify(LOCKFILE));
+	aliasChanged.packages[''].devDependencies['@types/iobroker'] = 'npm:@iobroker/types@^7.3.0';
+	assert.equal(pure.validateLockfile(aliasChanged, HEAD_MANIFEST).ok, false, 'changed alias spec');
+	// Null root sections are invalid objects.
+	const nullDeps = JSON.parse(JSON.stringify(LOCKFILE));
+	nullDeps.packages[''].dependencies = null;
+	assert.equal(pure.validateLockfile(nullDeps, HEAD_MANIFEST).ok, false, 'null root dependencies');
+	// Missing root section is equivalent to a really empty manifest section.
+	const emptyManifest = { name: 'iobroker.bluetti', version: '1.0.2', devDependencies: {} };
+	const emptyLock = { lockfileVersion: 3, packages: { '': { name: 'iobroker.bluetti', version: '1.0.2' } } };
+	assert.equal(pure.validateLockfile(emptyLock, emptyManifest).ok, true, 'missing root deps only for empty manifest');
+});
+
 test('file list: only modified root package.json and package-lock.json', () => {
 	assert.equal(pure.validateFileList(FILES, 2).ok, true);
 	assert.equal(
@@ -625,12 +679,88 @@ test('file list: only modified root package.json and package-lock.json', () => {
 	assert.equal(pure.validateFileList('nope', 2).ok, false);
 });
 
+test('file list: changed_files is a mandatory field (Pflichtfeldhärtung)', () => {
+	assert.equal(pure.validateFileList(FILES, undefined).ok, false, 'missing count');
+	assert.equal(pure.validateFileList(FILES, null).ok, false, 'null count');
+	assert.equal(pure.validateFileList(FILES, '2').ok, false, 'string count');
+	assert.equal(pure.validateFileList(FILES, 1.5).ok, false, 'non-integer count');
+	assert.equal(pure.validateFileList(FILES, -1).ok, false, 'negative count');
+});
+
+/* ---------------------------------------------------------------------- */
+/* Unit tests: PR commit completeness (R2)                                  */
+/* ---------------------------------------------------------------------- */
+
+function manyCommits(count) {
+	const list = Array.from({ length: count }, (_, index) =>
+		// Distinct, valid 40-char SHAs with an "e" prefix so they never
+		// collide with the head SHA (which starts with "a").
+		makeCommit({ sha: `e${index.toString(16).padStart(2, '0')}${'0'.repeat(37)}` }),
+	);
+	list[count - 1] = makeCommit({ sha: HEAD });
+	return list;
+}
+
+test('pr commits: count, cap, uniqueness and head inclusion are enforced (R2)', () => {
+	assert.equal(pure.validatePrCommits(manyCommits(1), 1, HEAD).ok, true, 'single head commit');
+	assert.equal(pure.validatePrCommits(manyCommits(100), 100, HEAD).ok, true, '100 commits');
+	assert.equal(pure.validatePrCommits(manyCommits(250), 250, HEAD).ok, true, 'cap boundary 250');
+	assert.equal(pure.validatePrCommits(manyCommits(251), 251, HEAD).ok, false, 'above the 250 cap');
+	assert.equal(pure.validatePrCommits(manyCommits(250), 251, HEAD).ok, false, '251 reported, endpoint capped at 250');
+	assert.equal(pure.validatePrCommits(manyCommits(100), 101, HEAD).ok, false, 'count drift');
+	assert.equal(pure.validatePrCommits(manyCommits(100), 99, HEAD).ok, false, 'count drift downwards');
+	const withoutHead = manyCommits(100);
+	withoutHead[99] = makeCommit({ sha: OTHER_SHA });
+	assert.equal(pure.validatePrCommits(withoutHead, 100, HEAD).ok, false, 'expected head missing');
+	const duplicated = manyCommits(2);
+	duplicated[1] = { ...duplicated[0] };
+	assert.equal(pure.validatePrCommits(duplicated, 2, HEAD).ok, false, 'duplicate SHAs');
+	const invalidSha = manyCommits(2);
+	invalidSha[0] = makeCommit({ sha: 'deadbeef' });
+	assert.equal(pure.validatePrCommits(invalidSha, 2, HEAD).ok, false, 'invalid SHA format');
+	assert.equal(pure.validatePrCommits(manyCommits(1), undefined, HEAD).ok, false, 'missing reported count');
+	assert.equal(pure.validatePrCommits(manyCommits(1), 0, HEAD).ok, false, 'zero reported count');
+	assert.equal(pure.validatePrCommits(manyCommits(1), '1', HEAD).ok, false, 'string reported count');
+	assert.equal(pure.validatePrCommits('nope', 1, HEAD).ok, false, 'commit list not an array');
+});
+
+test('pr object: number and base SHA are mandatory fields', () => {
+	assert.equal(pure.validatePrObject(makePr(), HEAD).ok, true);
+	assert.equal(pure.validatePrObject(makePr({ number: undefined }), HEAD).ok, false, 'missing number');
+	assert.equal(pure.validatePrObject(makePr({ number: 12.5 }), HEAD).ok, false, 'fractional number');
+	assert.equal(pure.validatePrObject(makePr({ number: 0 }), HEAD).ok, false, 'zero number');
+	assert.equal(
+		pure.validatePrObject(makePr({ base: { ref: 'main', sha: undefined, repo: { id: REPO_ID } } }), HEAD).ok,
+		false,
+		'missing base SHA',
+	);
+	assert.equal(
+		pure.validatePrObject(makePr({ base: { ref: 'main', sha: 'short', repo: { id: REPO_ID } } }), HEAD).ok,
+		false,
+		'invalid base SHA',
+	);
+	assert.equal(
+		pure.validatePrObject(makePr({ base: { ref: 'develop', sha: BASE, repo: { id: REPO_ID } } }), HEAD).ok,
+		false,
+		'retargeted base',
+	);
+	assert.equal(pure.validatePrObject(null, HEAD).ok, false);
+});
+
 /* ---------------------------------------------------------------------- */
 /* Unit tests: run, identity and check validation                          */
 /* ---------------------------------------------------------------------- */
 
 test('trigger run: every identity attribute is enforced', () => {
 	assert.equal(pure.validateTriggerRun(makeRun()).ok, true);
+	assert.equal(pure.validateTriggerRun(makeRun({ id: undefined })).ok, false, 'run id mandatory');
+	assert.equal(pure.validateTriggerRun(makeRun({ id: 12.5 })).ok, false, 'run id must be a safe integer');
+	assert.equal(pure.validateTriggerRun(makeRun({ check_suite_id: undefined })).ok, false, 'check_suite_id mandatory');
+	assert.equal(
+		pure.validateTriggerRun(makeRun({ check_suite_id: '999' })).ok,
+		false,
+		'check_suite_id must be an integer',
+	);
 	assert.equal(pure.validateTriggerRun(makeRun({ repository: { id: 42 } })).ok, false);
 	assert.equal(pure.validateTriggerRun(makeRun({ workflow_id: 111 })).ok, false);
 	assert.equal(pure.validateTriggerRun(makeRun({ name: 'Other' })).ok, false);
@@ -644,6 +774,7 @@ test('trigger run: every identity attribute is enforced', () => {
 	assert.equal(pure.validateTriggerRun(makeRun({ conclusion: 'skipped' })).ok, false);
 	assert.equal(pure.validateTriggerRun(makeRun({ head_sha: 'short' })).ok, false);
 	assert.equal(pure.validateTriggerRun(makeRun({ run_attempt: '1' })).ok, false);
+	assert.equal(pure.validateTriggerRun(makeRun({ run_attempt: 0 })).ok, false, 'attempt must be >= 1');
 	assert.equal(pure.validateTriggerRun(null).ok, false);
 });
 
@@ -711,6 +842,31 @@ test('checks: all three required checks must be present and successful', () => {
 	assert.equal(pure.validateChecks([], [], SUITE_ID, HEAD).ok, false, 'no checks is never success');
 });
 
+test('checks: job and check-run binding is unambiguous and ID-bound (R5)', () => {
+	// Duplicate required job names in the attempt are ambiguous.
+	assert.equal(pure.validateChecks([...JOBS, JOBS[0]], makeCheckRuns(), SUITE_ID, HEAD).ok, false, 'duplicate jobs');
+	// Required job without a safe integer id cannot be bound.
+	const noId = JOBS.map(job => ({ name: job.name, status: job.status, conclusion: job.conclusion }));
+	assert.equal(pure.validateChecks(noId, makeCheckRuns(), SUITE_ID, HEAD).ok, false, 'job without id');
+	// Two successful same-name head check runs are ambiguous, not "any success".
+	const duplicateSuccess = [...makeCheckRuns(), makeCheckRuns()[0]];
+	assert.equal(pure.validateChecks(JOBS, duplicateSuccess, SUITE_ID, HEAD).ok, false, 'duplicate check-runs');
+	// A successful same-name check-run bound to a foreign job id is rejected.
+	const foreignJobId = makeCheckRuns({ 'check-and-lint': { id: 4711 } });
+	assert.equal(pure.validateChecks(JOBS, foreignJobId, SUITE_ID, HEAD).ok, false, 'foreign job id');
+	// Missing check_suite_id on the triggering run removes suite attribution.
+	assert.equal(pure.validateChecks(JOBS, makeCheckRuns(), undefined, HEAD).ok, false, 'suite id missing');
+	assert.equal(pure.validateChecks(JOBS, makeCheckRuns(), 1.5, HEAD).ok, false, 'suite id not an integer');
+	// Missing head SHA removes head attribution.
+	assert.equal(pure.validateChecks(JOBS, makeCheckRuns(), SUITE_ID, 'short').ok, false, 'head SHA invalid');
+	// A check run without suite information cannot be attributed.
+	const noSuite = makeCheckRuns({ 'check-and-lint': { check_suite: undefined } });
+	assert.equal(pure.validateChecks(JOBS, noSuite, SUITE_ID, HEAD).ok, false, 'check run without suite');
+	// Non-array inputs fail closed.
+	assert.equal(pure.validateChecks('nope', makeCheckRuns(), SUITE_ID, HEAD).ok, false);
+	assert.equal(pure.validateChecks(JOBS, 'nope', SUITE_ID, HEAD).ok, false);
+});
+
 /* ---------------------------------------------------------------------- */
 /* Orchestration: audit mode (enabled=false) performs zero writes          */
 /* ---------------------------------------------------------------------- */
@@ -740,8 +896,15 @@ test('audit mode: empty payload pull_requests array is not authoritative', async
 test('audit mode: prod patch PR also reaches a merge-decision', async () => {
 	const files = defaultFiles();
 	files[`package.json@${HEAD}`] = { ...HEAD_MANIFEST, dependencies: { '@iobroker/adapter-core': '^3.4.4' } };
+	// The lockfile root must mirror the manifest dependencies (R4).
+	files[`package-lock.json@${HEAD}`] = {
+		...LOCKFILE,
+		packages: {
+			'': { ...LOCKFILE.packages[''], dependencies: { '@iobroker/adapter-core': '^3.4.4' } },
+		},
+	};
 	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
-	assert.equal(result.result, 'merge-decision');
+	assert.equal(result.result, 'merge-decision', result.reason);
 	assert.equal(writes.length, 0);
 });
 
@@ -929,12 +1092,13 @@ test('skip: one foreign commit among dependabot commits', async () => {
 	const { result, writes } = await runScenario({
 		scenario: {
 			commits: [
-				makeCommit(),
+				makeCommit({ sha: `e${'0'.repeat(39)}` }),
 				makeCommit({
 					author: { id: 5, login: 'someone', type: 'User' },
 					commit: { verification: { verified: true } },
 				}),
 			],
+			pr: makePr({ commits: 2 }),
 			fileContents: defaultFiles(),
 		},
 		enabled: false,
@@ -1130,8 +1294,343 @@ test('skip: head check-runs belong to a different check suite', async () => {
 });
 
 /* ---------------------------------------------------------------------- */
-/* Orchestration: pre-mutation drift and configuration errors              */
+/* Orchestration: rework regressions R2/R3/R5/R6/R7 and mandatory fields   */
 /* ---------------------------------------------------------------------- */
+
+test('unsupported-policy: PR with more than 250 commits is rejected (R2)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			// The endpoint would cap any list at 250 commits.
+			pr: makePr({ commits: 251 }),
+			commits: manyCommits(250),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /250/);
+	assert.equal(writes.length, 0);
+});
+
+test('audit mode: a 250-commit PR with a complete list still reaches a merge-decision (R2)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pageSize: 100,
+			pr: makePr({ commits: 250 }),
+			commits: manyCommits(250),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'merge-decision', result.reason);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: commit count drift between PR object and collected list (R2)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: makePr({ commits: 2 }),
+			commits: [makeCommit()],
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /collected 1 commits but PR reports 2/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: expected head missing from the collected commit list (R2)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: makePr({ commits: 1 }),
+			commits: [makeCommit({ sha: OTHER_SHA })],
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /expected head SHA is not part/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: PR retargeted to develop with identical base SHA before mutation (R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			fileContents: defaultFiles(),
+			pr: count =>
+				count === 0 ? makePr() : makePr({ base: { ref: 'develop', sha: BASE, repo: { id: REPO_ID } } }),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /pr base is not main/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: fresh PR without base repository before mutation (R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			fileContents: defaultFiles(),
+			pr: count => (count === 0 ? makePr() : makePr({ base: { ref: 'main', sha: BASE, repo: null } })),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /pr base is not main/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: base branch reference without a valid SHA passes nothing (R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			fileContents: defaultFiles(),
+			mainRef: { object: { sha: null } },
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /did not return a valid 40-char SHA/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: base branch reference loses its SHA at revalidation (R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			fileContents: defaultFiles(),
+			mainRef: count => (count === 0 ? { object: { sha: MAIN } } : { object: {} }),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /did not return a valid 40-char SHA/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: stable PR base differing from the current main head fails closed (R3)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			fileContents: defaultFiles(),
+			pr: makePr({ base: { ref: 'main', sha: OTHER_SHA, repo: { id: REPO_ID } } }),
+			mainRef: { object: { sha: MAIN } },
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /differs from current base branch head/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: newer attempt starts before the final decision (R5)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			run: count => (count === 0 ? makeRun() : makeRun({ run_attempt: 2 })),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /drifted before decision/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: required checks drift to failure before the final decision (R5)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			checkRuns: count =>
+				count === 0 ? makeCheckRuns() : makeCheckRuns({ 'check-and-lint': { conclusion: 'failure' } }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /check-and-lint/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: fresh run id differs from the payload run id (R5)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			run: makeRun({ id: RUN_ID + 1 }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /fresh run id does not match the payload run id/);
+	assert.equal(writes.length, 0);
+});
+
+test('error: readback with a different merged head fails closed (R6)', async () => {
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			pr: count =>
+				count <= 1
+					? makePr()
+					: makePr({
+							state: 'closed',
+							merged: true,
+							head: { sha: OTHER_SHA, ref: 'dependabot/x', repo: { id: REPO_ID } },
+							merge_commit_sha: MERGE_SHA,
+						}),
+			mergeResponse: { merged: true, sha: MERGE_SHA },
+			fileContents: defaultFiles(),
+		},
+		enabled: true,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	assert.match(result.reason, /merged head differs from the validated head/);
+	assert.equal(core.__failures.length, 1);
+	assert.equal(writes.length, 1);
+});
+
+test('error: merge response without a valid merge commit SHA fails closed (R6)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: openThenMergedPr(),
+			mergeResponse: { merged: true, sha: 'not-a-sha' },
+			fileContents: defaultFiles(),
+		},
+		enabled: true,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	assert.match(result.reason, /response did not contain a valid merge commit SHA/);
+	assert.equal(writes.length, 1);
+});
+
+test('error: readback with a foreign base repository fails closed (R6)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: count =>
+				count <= 1
+					? makePr()
+					: makePr({
+							state: 'closed',
+							merged: true,
+							base: { ref: 'main', sha: BASE, repo: { id: 4711 } },
+							merge_commit_sha: MERGE_SHA,
+						}),
+			mergeResponse: { merged: true, sha: MERGE_SHA },
+			fileContents: defaultFiles(),
+		},
+		enabled: true,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	assert.match(result.reason, /identity mismatch/);
+	assert.equal(writes.length, 1);
+});
+
+test('error: raw API exception never reaches logs, summary or setFailed (R7)', async () => {
+	const canaryError = new Error('SYNTHETIC-CANARY-SECRET token=abcdef\nx-injected-header: 1');
+	canaryError.status = 500;
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			run: () => {
+				throw canaryError;
+			},
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'error', result.reason);
+	assert.match(result.reason, /HTTP 500/);
+	const emitted = [result.reason, ...core.__info, ...core.__summaries, ...core.__failures].join('\n');
+	assert.equal(emitted.includes('SYNTHETIC-CANARY'), false, 'canary leaked');
+	assert.equal(emitted.includes('token=abcdef'), false, 'fragment leaked');
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: JSON parser fragments never reach the output (R7)', async () => {
+	const files = defaultFiles();
+	files[`package-lock.json@${HEAD}`] = { raw: '{"SYNTHETIC-CANARY-SECRET": "truncated' };
+	const { result, writes, core } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	const emitted = [result.reason, ...core.__info, ...core.__summaries, ...core.__failures].join('\n');
+	assert.equal(emitted.includes('SYNTHETIC-CANARY'), false, 'canary leaked');
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: control characters in file names are sanitized (R7)', async () => {
+	const { result, writes, core } = await runScenario({
+		scenario: {
+			files: [
+				{ filename: 'package.json', status: 'modified' },
+				{ filename: 'package-lock.json\n## Forged-Summary-Line SYNTHETIC-CANARY', status: 'modified' },
+			],
+			pr: makePr({ changed_files: 2 }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	const summary = core.__summaries.join('');
+	assert.equal(summary.includes('SYNTHETIC-CANARY'), false, 'canary leaked');
+	assert.equal(summary.includes('\n## Forged-Summary-Line'), false, 'newline injection survived');
+	assert.equal(writes.length, 0);
+});
+
+test('error: unknown config field with canary content never reaches the output (R7)', async () => {
+	const { result, core } = await runScenario({
+		configTemplate: { ...CONFIG_TEMPLATE, 'SYNTHETIC-CANARY\ninjected': true },
+		scenario: { fileContents: defaultFiles() },
+	});
+	assert.equal(result.result, 'error', result.reason);
+	const emitted = [result.reason, ...core.__info, ...core.__summaries, ...core.__failures].join('\n');
+	assert.equal(emitted.includes('SYNTHETIC-CANARY'), false, 'canary leaked');
+});
+
+test('unsupported-policy: PR without a changed_files count fails closed (Pflichtfeld)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			pr: makePr({ changed_files: undefined }),
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /changed_files/);
+	assert.equal(writes.length, 0);
+});
+
+test('skip: candidate PR without a valid number fails closed (Pflichtfeld)', async () => {
+	const { result, writes } = await runScenario({
+		scenario: {
+			openPrs: [makePr({ number: undefined })],
+			fileContents: defaultFiles(),
+		},
+		enabled: false,
+	});
+	assert.equal(result.result, 'skip', result.reason);
+	assert.match(result.reason, /candidate PR number/);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: lockfile without a valid size field fails closed (Pflichtfeld)', async () => {
+	const files = defaultFiles();
+	files[`package-lock.json@${HEAD}`] = { raw: JSON.stringify(LOCKFILE), size: null };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /no valid size field/);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: lockfile size mismatching the decoded content fails closed (Pflichtfeld)', async () => {
+	const files = defaultFiles();
+	files[`package-lock.json@${HEAD}`] = { raw: JSON.stringify(LOCKFILE), size: 5 };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /possible truncation/);
+	assert.equal(writes.length, 0);
+});
+
+test('unsupported-policy: manifest with a non-integer size field fails closed (Pflichtfeld)', async () => {
+	const files = defaultFiles();
+	files[`package.json@${HEAD}`] = { raw: JSON.stringify(HEAD_MANIFEST), size: 'many' };
+	const { result, writes } = await runScenario({ scenario: { fileContents: files }, enabled: false });
+	assert.equal(result.result, 'unsupported-policy', result.reason);
+	assert.match(result.reason, /no valid size field/);
+	assert.equal(writes.length, 0);
+});
 
 test('skip: head drifts between validation and mutation', async () => {
 	const { result, writes } = await runScenario({
@@ -1142,7 +1641,7 @@ test('skip: head drifts between validation and mutation', async () => {
 		enabled: true,
 	});
 	assert.equal(result.result, 'skip', result.reason);
-	assert.match(result.reason, /head drifted/);
+	assert.match(result.reason, /does not match triggering run head/);
 	assert.equal(writes.length, 0);
 });
 
@@ -1403,6 +1902,14 @@ test('test-and-release workflow: read-only PR jobs, tag-only deploy, unchanged g
 	const deployBlock = yaml.slice(yaml.indexOf('  deploy:'));
 	assert.match(deployBlock, /id-token:\s*write/);
 	assert.match(deployBlock, /contents:\s*write/);
+});
+
+test('test-and-release workflow: check-and-lint executes the controller test suite (R1)', () => {
+	const yaml = readWorkflow('test-and-release.yml');
+	const checkBlock = yaml.slice(yaml.indexOf('check-and-lint:'), yaml.indexOf('adapter-tests:'));
+	assert.match(checkBlock, /test-command:\s*'npm run test:package && npm run test:workflow'/);
+	// No job, matrix, trigger or gate names were added or renamed.
+	assert.match(yaml, /needs:\s*check-and-lint/);
 });
 
 test('repository files: incompatible auto-merge.yml is gone, JSON config shipped', () => {

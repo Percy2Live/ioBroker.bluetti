@@ -39,6 +39,10 @@ jobs:
           # install-command: 'npm install'
           type-checking: true
           lint: true
+          # Bind the offline controller test suite into this required job so
+          # the workflow tests run as part of the mandatory gate (they are NOT
+          # part of test:ts and were previously not executed in CI at all).
+          test-command: 'npm run test:package && npm run test:workflow'
 
   # Runs adapter tests on all supported node versions and OSes
   adapter-tests:
